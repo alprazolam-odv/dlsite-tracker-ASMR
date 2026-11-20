@@ -5,6 +5,8 @@
   import GameBadges from "./GameBadges.svelte";
   import GamePrice from "./GamePrice.svelte";
   import HeartButton from "./HeartButton.svelte";
+  import VoiceLine from "./VoiceLine.svelte";
+  import type { Credit } from "./audio";
 
   let {
     game,
@@ -14,6 +16,7 @@
     rankText = null,
     onbadge,
     onmaker,
+    onvoice,
     onopen,
   }: {
     game: WorkView;
@@ -23,6 +26,7 @@
     rankText?: string | null;
     onbadge?: (key: "voice" | "music" | "video") => void;
     onmaker?: () => void;
+    onvoice?: (credit: Credit) => void;
     onopen: () => void;
   } = $props();
 </script>
@@ -45,6 +49,7 @@
         <GameBadges {game} showText={false} ontap={onbadge} />
       {/if}
     </div>
+    <VoiceLine {game} {onvoice} />
   </div>
   <span class="spacer"></span>
   {#if rankText}

@@ -3,6 +3,7 @@
 // 数据只在本机流转：所有命令都只读本地文件，不做任何网络访问。
 
 use std::fs;
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -231,6 +232,126 @@ fn configure_background_command(command: &mut Command) {
     }
     #[cfg(not(windows))]
     let _ = command;
+}
+
+/// 用户明确选择目录后，只在本机识别含 RJ 编号的音频文件，不读取内容或保存路径。
+fn rj_ids(value: &str) -> Vec<String> {
+    let upper = value.to_ascii_uppercase();
+    let bytes = upper.as_bytes();
+    let mut result = Vec::new();
+    let mut i = 0;
+    while i + 2 < bytes.len() {
+        if &bytes[i..i + 2] == b"RJ" && (i == 0 || !bytes[i - 1].is_ascii_alphanumeric()) {
+            let mut end = i + 2;
+            while end < bytes.len() && bytes[end].is_ascii_digit() { end += 1; }
+            if matches!(end - i - 2, 6 | 8) {
+                result.push(upper[i..end].to_string());
+            }
+            i = end;
+        } else {
+            i += 1;
+        }
+    }
+    result
+}
+
+fn scan_audio_tree(root: &Path) -> Result<Vec<String>, String> {
+    let mut ids = BTreeSet::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(error) if dir == root => return Err(format!("无法读取所选目录：{error}")),
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let Ok(kind) = entry.file_type() else { continue };
+            if kind.is_symlink() { continue; }
+            let path = entry.path();
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::MetadataExt;
+                if entry.metadata().map(|meta| meta.file_attributes() & 0x400 != 0).unwrap_or(true) {
+                    continue; // Windows junction / reparse point
+                }
+            }
+            if kind.is_dir() {
+                pending.push(path);
+            } else if kind.is_file() {
+                let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("").to_ascii_lowercase();
+                if ["mp3", "wav", "flac", "ogg", "opus", "m4a", "aac", "wma", "aiff", "aif", "ape", "m4b"].contains(&extension.as_str()) {
+                    if let Ok(relative) = path.strip_prefix(root) {
+                        // 优先匹配最接近文件的一级名称，避免父目录误关联多部作品。
+                        let nearest = relative.components().rev().map(|part| rj_ids(&part.as_os_str().to_string_lossy()))
+                            .find(|matches| !matches.is_empty()).unwrap_or_else(|| {
+                                root.file_name().map(|part| rj_ids(&part.to_string_lossy())).unwrap_or_default()
+                            });
+                        if nearest.len() == 1 { ids.insert(nearest[0].clone()); }
+                    }
+                }
+            }
+        }
+    }
+    Ok(ids.into_iter().collect())
+}
+
+#[cfg(test)]
+mod audio_scan_tests {
+    use super::*;
+
+    #[test]
+    fn scan_only_audio_files_with_unambiguous_ids() {
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let dir = std::env::temp_dir().join(format!("radar-audio-test-{}-{stamp}", std::process::id()));
+        fs::create_dir(&dir).unwrap();
+        let folder = dir.join("RJ123456");
+        fs::create_dir(&folder).unwrap();
+        fs::write(folder.join("track.wav"), "").unwrap();
+        fs::write(dir.join("rj12345678.mp3"), "").unwrap();
+        fs::write(dir.join("RJ222222.txt"), "").unwrap();
+        fs::write(dir.join("RJ333333 RJ444444.mp3"), "").unwrap();
+        fs::write(dir.join("RJ555555555.wav"), "").unwrap();
+        let actual = scan_audio_tree(&dir).unwrap();
+        fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(actual, vec!["RJ123456".to_string(), "RJ12345678".to_string()]);
+    }
+}
+
+#[tauri::command]
+async fn scan_local_audio(app: AppHandle) -> Result<Option<Vec<String>>, String> {
+    let Some(folder) = app.dialog().file().set_title("选择要识别的本地音频目录").blocking_pick_folder() else {
+        return Ok(None);
+    };
+    let root = folder.into_path().map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || scan_audio_tree(&root).map(Some))
+        .await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn refresh_audio_details(app: AppHandle, workno: Option<String>) -> Result<String, String> {
+    let project_dir = project_dir_of(&app)?;
+    let mut args = vec!["audio-details", "--limit", "10"];
+    if let Some(ref id) = workno {
+        args.extend(["--workno", id.as_str()]);
+    }
+    let mut command = if let Some((sidecar, dir)) = embedded_target(&project_dir) {
+        embedded_command(&sidecar, &dir, &args)?
+    } else {
+        let mut full = vec!["-m", "dlsite_tracker"];
+        full.extend(args);
+        #[cfg(windows)]
+        { python_command(&project_dir, &full)? }
+        #[cfg(not(windows))]
+        { let mut c = Command::new("python3"); c.args(full).current_dir(&project_dir); c }
+    };
+    configure_background_command(&mut command);
+    command.env("PYTHONIOENCODING", "utf-8");
+    let output = tauri::async_runtime::spawn_blocking(move || command.output())
+        .await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+    let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if output.status.success() { Ok(result) }
+    else if output.status.code() == Some(3) { Err("其他数据任务正在运行，请稍后再补齐。".into()) }
+    else { Err(if result.is_empty() { "补齐资料失败，请检查网络后重试。".into() } else { result }) }
 }
 
 /// 后台启动一个已配置好的子进程（stdout/stderr 丢弃，线程回收退出码）。
@@ -765,6 +886,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_data_path,
+            scan_local_audio,
+            refresh_audio_details,
             pick_data_file,
             load_works,
             load_library,

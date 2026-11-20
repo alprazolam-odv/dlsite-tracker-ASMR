@@ -53,6 +53,9 @@
   {#if game.voice_actors}
     <div class="hc-maker">声优：{game.voice_actors}</div>
   {/if}
+  {#if game.duration_seconds || game.languages?.length}
+    <div class="hc-maker">{game.duration_seconds ? Math.round(game.duration_seconds / 60) + " 分钟" : "时长未知"} · {(game.languages ?? []).join(" / ") || "语言未知"}</div>
+  {/if}
   {#if categories.length > 0}
     <CategoryChips {categories} />
   {/if}

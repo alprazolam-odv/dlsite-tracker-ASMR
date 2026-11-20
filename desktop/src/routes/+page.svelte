@@ -41,6 +41,9 @@
   import CompactRow from "$lib/CompactRow.svelte";
   import CoverTile from "$lib/CoverTile.svelte";
   import Discover from "$lib/Discover.svelte";
+  import AudioWorkspace from "$lib/AudioWorkspace.svelte";
+  import { audioLibrary } from "$lib/audio.svelte";
+  import { uniqueEditions, type Credit } from "$lib/audio";
   import FollowUpdates from "$lib/FollowUpdates.svelte";
   import LargeRow from "$lib/LargeRow.svelte";
   import MediumCard from "$lib/MediumCard.svelte";
@@ -161,7 +164,10 @@
 
   let view = $state<ViewMode>(normalizeView(prefs.data.displayMode));
   /** 主区模式：浏览（列表）/ 发现（口味匹配与黑马信号） */
-  let mode = $state<"browse" | "discover" | "followUpdates">("browse");
+  let mode = $state<"browse" | "discover" | "followUpdates" | "audio">("browse");
+  let audioActor = $state<Credit | null>(null);
+  let audioTab = $state<"browse" | "following" | "bedtime">("browse");
+  let audioSeed = $state(0);
   let discoverReturnMode = $state<"browse" | "followUpdates">("browse");
   let followUpdatesVisited = $state(false);
   let returnToFollowUpdates = $state(false);
@@ -214,6 +220,8 @@
   let tasteEditorOpen = $state(false);
 
   const works = $derived(data?.works ?? []);
+  const audioUnread = $derived(audioLibrary.unread(works).length);
+  const discoveryWorks = $derived(uniqueEditions(works));
 
   /** 测量用「最宽内容」卡片：长标题 + 最长 9 个分类 + 三形式 + 全徽章 + 全数据行 + 折扣价 */
   const measureWork = $derived.by((): WorkView | null => {
@@ -1140,9 +1148,17 @@
       if (discoverReturnMode === "followUpdates") openFollowUpdates();
       else mode = "browse";
     } else {
-      discoverReturnMode = mode;
+      discoverReturnMode = mode === "followUpdates" ? "followUpdates" : "browse";
       mode = "discover";
     }
+  }
+
+  function openAudio(actor: Credit | null = null, tab: "browse" | "following" | "bedtime" = "browse") {
+    hideHover();
+    audioActor = actor;
+    audioTab = tab;
+    audioSeed += 1;
+    mode = "audio";
   }
 
   function openMakerFromFollowUpdates(work: WorkView) {
@@ -1173,7 +1189,7 @@
 <div class="app">
   {#if prefs.data.sidebarVisible}
     <Sidebar
-      active={mode !== "discover"}
+      active={mode === "browse" || mode === "followUpdates"}
       bind:filter
       bind:viewFilter
       bind:importYears
@@ -1249,6 +1265,10 @@
           onclick={toggleDiscover}
         >
           {@html ICONS.flame}{mode === "discover" ? "返回浏览" : "发现"}
+        </button>
+        <button class="btn" class:active={mode === "audio"} disabled={status !== "ready"}
+          onclick={() => mode === "audio" ? (mode = "browse") : openAudio()}>
+          音声工作台{audioUnread ? ` · ${audioUnread}` : ""}
         </button>
         <button
           class="btn with-icon personalization-trigger"
@@ -1334,7 +1354,7 @@
     {#if mode === "discover" && status === "ready" && data}
       <Discover
         resetScrollToken={manualRefreshCount}
-        works={data.works}
+        works={discoveryWorks}
         tasteProfile={prefs.data.tasteProfile}
         {followedMakers}
         {seenIds}
@@ -1346,6 +1366,19 @@
         onseen={(game) => library.markSeen(game.id)}
         oncontext={openDiscoveryMenu}
       />
+    {/if}
+    {#if mode === "audio" && status === "ready" && data}
+      {#key audioSeed}
+        <AudioWorkspace {works} initialActor={audioActor} initialTab={audioTab}
+          onopen={openWork} onclose={() => (mode = "browse")}
+          onreload={() => reload({ quiet: true, keepScroll: true })}
+          oncheck={() => runUpdate("quick")} />
+      {/key}
+    {/if}
+    {#if status === "ready" && audioUnread > 0 && mode !== "audio"}
+      <button class="follow-banner" onclick={() => openAudio(null, "following")}>
+        <span>关注声优发布了 {audioUnread} 部近两周新作</span><span class="spacer"></span><span class="follow-banner-link">查看声优新作</span>
+      </button>
     {/if}
     {#if followUpdatesVisited && status === "ready" && data}
       <FollowUpdates
@@ -1546,6 +1579,7 @@
                       onform={chipForm}
                       onbadge={chipBadge}
                       onmaker={() => showMaker(w)}
+                      onvoice={(credit) => openAudio(credit)}
                       onopen={() => openWork(w.url)}
                     />
                   {:else if view === "compact"}
@@ -1557,6 +1591,7 @@
                       rankText={rankTextFor(w)}
                       onbadge={chipBadge}
                       onmaker={() => showMaker(w)}
+                      onvoice={(credit) => openAudio(credit)}
                       onopen={() => openWork(w.url)}
                     />
                   {:else if view === "coverWall"}
@@ -1573,6 +1608,7 @@
                       onform={chipForm}
                       onbadge={chipBadge}
                       onmaker={() => showMaker(w)}
+                      onvoice={(credit) => openAudio(credit)}
                       onopen={() => openWork(w.url)}
                     />
                   {/if}

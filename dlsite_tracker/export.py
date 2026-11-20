@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from .config import split_list
+from .audio import LANGUAGE_NAMES
 from .store import Store
 
 LOG = logging.getLogger("dlsite_tracker.export")
@@ -38,7 +39,8 @@ SELECT w.workno, w.site, w.product_name, w.maker_name, w.maker_id, w.work_type, 
        w.rank_day_current, w.rank_week_current, w.rank_month_current,
        w.rank_trend_current,
        w.rank_current_seen_at,
-       w.regist_date, w.sales_seen_at, w.genres_json, w.options, w.wishlist_count, w.voice_actors
+       w.regist_date, w.sales_seen_at, w.genres_json, w.options, w.wishlist_count, w.voice_actors,
+       w.audio_meta, w.duration_seconds, w.duration_checked_at
 FROM works w
 """
 
@@ -53,6 +55,7 @@ CSV_COLUMNS = [
     "rank_trend_current", "rank_current_seen_at",
     "work_type", "regist_date", "sales_seen_at",
     "maker_id", "voice_actors", "voice", "music", "video",
+    "languages", "original_id", "duration_seconds", "has_preview",
 ]
 
 COVER_EXTENSIONS = ("jpg", "jpeg", "png", "webp", "gif")
@@ -168,7 +171,20 @@ def build_record(
         "voice": "SND" in tokens,
         "music": "MS2" in tokens,
         "video": "MV2" in tokens,
+        "duration_seconds": row["duration_seconds"],
+        "duration_checked": row["duration_checked_at"] is not None,
     }
+    try:
+        audio = json.loads(row["audio_meta"] or "{}")
+    except (ValueError, TypeError):
+        audio = {}
+    if not isinstance(audio, dict):
+        audio = {}
+    record["voice_credits"] = audio.get("voice_credits") or []
+    record["languages"] = audio.get("languages") or [LANGUAGE_NAMES[token] for token in tokens if token in LANGUAGE_NAMES]
+    record["original_id"] = audio.get("original_id")
+    record["related_ids"] = audio.get("related_ids") or []
+    record["has_preview"] = bool(audio.get("has_preview") or "TRI" in tokens)
     if genre_pos:
         record["genre_pos"] = {str(key): int(value) for key, value in genre_pos.items()}
     return record

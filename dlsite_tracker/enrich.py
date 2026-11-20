@@ -10,6 +10,7 @@ import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .http import Fetcher, HttpError
+from .audio import audio_metadata, explicit_duration_seconds
 from .sales import parse_options, parse_precise_rating, sync_sales
 from .store import Store
 
@@ -103,17 +104,8 @@ def parse_product(
     options = parse_options(picked.get("work_attributes"))
 
     maker_id = picked.get("maker_id")
-    creators = picked.get("creaters")
-    credits = creators.get("voice_by") if isinstance(creators, dict) else None
-    actors = []
-    if isinstance(credits, list):
-        for entry in credits:
-            name = entry.get("name") if isinstance(entry, dict) else None
-            if isinstance(name, str) and name.strip() and name.strip() not in actors:
-                actors.append(name.strip())
-    legacy_voice = picked.get("voice_by")
-    if not actors and isinstance(legacy_voice, str) and legacy_voice.strip():
-        actors = [legacy_voice.strip()]
+    audio = audio_metadata(picked)
+    actors = list(dict.fromkeys(credit["name"] for credit in audio["voice_credits"]))
 
     row: Dict[str, Any] = {
         "workno": picked.get("workno") or workno,
@@ -122,6 +114,7 @@ def parse_product(
         "maker_id": str(maker_id) if maker_id is not None else None,
         "maker_name": picked.get("maker_name"),
         "voice_actors": " / ".join(actors),
+        "audio_meta": json.dumps(audio, ensure_ascii=False),
         "work_category": picked.get("work_category"),
         "work_type": picked.get("work_type"),
         "work_type_string": picked.get("work_type_string"),
@@ -150,6 +143,10 @@ def parse_product(
         "image_url": image or None,
     }
     precise_rating = parse_precise_rating(picked.get("rate_average_2dp"))
+    if picked.get("work_type") == "SOU":
+        duration = explicit_duration_seconds(picked.get("intro"))
+        if duration is not None:
+            row["duration_seconds"] = duration
     if precise_rating is not None:
         row["rating_precise"] = precise_rating
     if options:

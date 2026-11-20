@@ -161,6 +161,7 @@ SCHEMA_STATEMENTS: List[str] = [
 
 WORK_COLUMNS: List[str] = [
     "workno", "site", "product_name", "maker_id", "maker_name", "work_category", "voice_actors",
+    "audio_meta", "duration_seconds", "duration_checked_at",
     "work_type", "work_type_string", "age_category", "sex_category", "price",
     "official_price", "discount_rate", "is_timesale", "timesale_price",
     "timesale_end_date", "rating_star", "rating_precise", "rating_count", "rank_day",
@@ -214,6 +215,9 @@ class Store:
             ("rating_precise", "REAL"),
             ("rating_precise_checked_at", "TEXT"),
             ("voice_actors", "TEXT"),
+            ("audio_meta", "TEXT"),
+            ("duration_seconds", "INTEGER"),
+            ("duration_checked_at", "TEXT"),
         ):
             if column not in existing:
                 self.conn.execute(f"ALTER TABLE works ADD COLUMN {column} {column_type}")

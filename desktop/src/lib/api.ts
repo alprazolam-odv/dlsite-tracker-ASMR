@@ -8,6 +8,13 @@ export interface Work {
   title: string;
   maker: string;
   voice_actors?: string;
+  voice_credits?: { id: string; name: string }[];
+  languages?: string[];
+  original_id?: string | null;
+  related_ids?: string[];
+  duration_seconds?: number | null;
+  duration_checked?: boolean;
+  has_preview?: boolean;
   category: string;
   form: string;
   sales: number | null;

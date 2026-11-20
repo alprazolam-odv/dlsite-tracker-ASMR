@@ -8,6 +8,8 @@
   import GameMetaFlow from "./GameMetaFlow.svelte";
   import GamePrice from "./GamePrice.svelte";
   import HeartButton from "./HeartButton.svelte";
+  import VoiceLine from "./VoiceLine.svelte";
+  import type { Credit } from "./audio";
 
   let {
     game,
@@ -20,6 +22,7 @@
     onform,
     onbadge,
     onmaker,
+    onvoice,
     onopen,
   }: {
     game: WorkView;
@@ -32,6 +35,7 @@
     onform?: (name: string) => void;
     onbadge?: (key: "voice" | "music" | "video") => void;
     onmaker?: () => void;
+    onvoice?: (credit: Credit) => void;
     onopen: () => void;
   } = $props();
 
@@ -59,7 +63,9 @@
         {/if}
       </div>
       <div class="form-slot">
-        {#if forms.length > 0}
+        {#if game.voice_actors || game.voice_credits?.length}
+          <VoiceLine {game} {onvoice} />
+        {:else if forms.length > 0}
           <FormChips {forms} limit={1} ontap={onform} />
         {/if}
       </div>

@@ -26,7 +26,8 @@ from .discovery import (
     fetch_rankings,
     fetch_trend_rankings,
 )
-from .enrich import enrich_pending
+from .enrich import enrich_pending, PRODUCT_API_URL, parse_product
+from .audio import explicit_duration_seconds, workno as audio_workno
 from .export import COVER_EXTENSIONS, export_current, export_snapshot
 from .http import Fetcher, HttpError, RobotsChanged
 from .progress import write_task_progress
@@ -522,6 +523,89 @@ def cmd_export(cfg: Config, args: argparse.Namespace) -> int:
         return 1
     finally:
         store.close()
+
+
+def cmd_audio_details(cfg: Config, args: argparse.Namespace) -> int:
+    """补齐已有音声的署名、语言、版本与页面明确标注的总时长。"""
+    if not (cfg.data_dir / "dlsite.sqlite").is_file():
+        LOG.error("当前是离线作品文件，缺少原始数据库；无法在线补齐资料")
+        return 1
+    lock = jobs.PipelineLock(cfg.data_dir / "pipeline.lock")
+    if lock.acquire() is not None:
+        LOG.error("正在更新/导入，请完成或暂停后再补齐资料")
+        return 3
+    store = None
+    fetcher = None
+    try:
+        store = _open_store(cfg)
+        if args.workno:
+            chosen = audio_workno(args.workno)
+            if not chosen:
+                raise ValueError("请输入有效的 RJ 作品号")
+            rows = store.conn.execute(
+                "SELECT workno,site,audio_meta,duration_seconds,duration_checked_at FROM works "
+                "WHERE work_type='SOU' AND workno=? AND enriched_at IS NOT NULL", (chosen,)
+            ).fetchall()
+        else:
+            rows = store.conn.execute(
+                "SELECT workno,site,audio_meta,duration_seconds,duration_checked_at FROM works "
+                "WHERE work_type='SOU' AND enriched_at IS NOT NULL "
+                "AND (audio_meta IS NULL OR (duration_seconds IS NULL AND duration_checked_at IS NULL)) "
+                "ORDER BY regist_date DESC LIMIT ?", (max(1, min(args.limit, 100)),)
+            ).fetchall()
+        if not rows:
+            print("没有待补齐的音声作品")
+            return 0
+        fetcher = _fetcher(cfg)
+        filled, failed = 0, 0
+        for row in rows:
+            ident, site = row["workno"], row["site"]
+            if not audio_workno(ident) or site not in cfg.sites:
+                continue
+            try:
+                duration = row["duration_seconds"]
+                if not row["audio_meta"]:
+                    parsed = parse_product(fetcher.get_json(PRODUCT_API_URL.format(
+                        site=site, workno=ident, locale=cfg.locale)), ident)
+                    if parsed is None or parsed[0].get("workno") != ident or parsed[0].get("work_type") != "SOU":
+                        raise ValueError("音声资料未返回")
+                    values = parsed[0]
+                    duration = values.get("duration_seconds") or duration
+                    with store.conn:
+                        store.conn.execute(
+                            "UPDATE works SET audio_meta=?,voice_actors=?,duration_seconds=COALESCE(?,duration_seconds) WHERE workno=?",
+                            (values["audio_meta"], values["voice_actors"], values.get("duration_seconds"), ident),
+                        )
+                if duration is None and (args.workno or row["duration_checked_at"] is None):
+                    page = fetcher.get_text(
+                        f"https://www.dlsite.com/{site}/work/=/product_id/{ident}.html", kind="page"
+                    )
+                    if ident not in page:
+                        raise ValueError("未收到目标作品页")
+                    seconds = explicit_duration_seconds(page)
+                    with store.conn:
+                        store.conn.execute(
+                            "UPDATE works SET duration_seconds=COALESCE(?,duration_seconds),"
+                            "duration_checked_at=CURRENT_TIMESTAMP WHERE workno=?", (seconds, ident)
+                        )
+                filled += 1
+            except (HttpError, ValueError) as exc:
+                failed += 1
+                LOG.warning("作品资料补齐失败：%s（%s）", ident, exc)
+                if failed >= 3:
+                    break
+        export_current(cfg, store)
+        print(f"已处理 {filled} 部，失败 {failed} 部；未声明总时长的作品继续显示未知。")
+        return 1 if failed else 0
+    except (HttpError, RobotsChanged, ValueError, OSError) as exc:
+        LOG.error("音声资料补齐失败：%s", exc)
+        return 1
+    finally:
+        if fetcher is not None:
+            fetcher.close()
+        if store is not None:
+            store.close()
+        lock.release()
 
 
 def cmd_images(cfg: Config, args: argparse.Namespace) -> int:
@@ -1183,6 +1267,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     export = sub.add_parser("export", help="导出 out/works.json 与 out/works.csv")
+    audio_details = sub.add_parser("audio-details", help="补齐音声资料和作品页明示的总时长")
+    audio_details.add_argument("--limit", type=int, default=10)
+    audio_details.add_argument("--workno", default=None)
     export.add_argument("--work-types", default=None, help="逗号分隔的作品形式过滤（默认取配置 default_work_types）")
 
     images = sub.add_parser("images", help="下载封面缩略图到 out/covers/")
@@ -1255,6 +1342,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_import_recent(cfg, args)
     if args.command == "export":
         return cmd_export(cfg, args)
+    if args.command == "audio-details":
+        return cmd_audio_details(cfg, args)
     if args.command == "images":
         return cmd_images(cfg, args)
     if args.command == "serve":
