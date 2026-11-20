@@ -33,6 +33,7 @@
   let previewOnly = $state(false);
   let duration = $state("");
   let bedtimeMinutes = $state(90);
+  let bedtimeUnknown = $state(true);
   let collapseVersions = $state(true);
   let maxRows = $state(40);
   let actorLimit = $state(12);
@@ -102,14 +103,14 @@
       if (duration === "medium" && (seconds <= 30 * 60 || seconds > 90 * 60)) return false;
       if (duration === "long" && seconds <= 90 * 60) return false;
       if (tab === "bedtime" && (["heard", "disliked"].includes(audioLibrary.data.listening[w.id] ?? "")
-        || !bedtimeReason(w, bedtimeMinutes, prefs.data.tasteProfile, audioLibrary.data.following))) return false;
+        || !bedtimeReason(w, bedtimeMinutes, prefs.data.tasteProfile, audioLibrary.data.following, bedtimeUnknown))) return false;
       return true;
     });
     if (tab === "bedtime") found.sort((a, b) =>
-      (bedtimeReason(b, bedtimeMinutes, prefs.data.tasteProfile, audioLibrary.data.following)?.score ?? 0) -
-      (bedtimeReason(a, bedtimeMinutes, prefs.data.tasteProfile, audioLibrary.data.following)?.score ?? 0));
+      (bedtimeReason(b, bedtimeMinutes, prefs.data.tasteProfile, audioLibrary.data.following, bedtimeUnknown)?.score ?? 0) -
+      (bedtimeReason(a, bedtimeMinutes, prefs.data.tasteProfile, audioLibrary.data.following, bedtimeUnknown)?.score ?? 0));
     else found.sort((a, b) => (b.regist_date ?? "").localeCompare(a.regist_date ?? "") || b.id.localeCompare(a.id));
-    return collapseVersions ? uniqueEditions(found, groups) : found;
+    return collapseVersions ? uniqueEditions(found, groups, tab !== "bedtime") : found;
   });
 
   function switchTab(next: typeof tab) {
@@ -249,7 +250,8 @@
     <section class="panel">
       <h3>今晚想听多久？</h3>
       <label>最多 <input type="number" min="5" max="480" step="5" bind:value={bedtimeMinutes} /> 分钟</label>
-      <p class="hint">从明确标注助眠、耳语、采耳等标签且已知时长的作品中推荐；结合你的口味和关注，排除已听和不喜欢的作品。未知总时长的作品不进入推荐。</p>
+      <label><input type="checkbox" bind:checked={bedtimeUnknown} /> 同时显示时长未知的备选</label>
+      <p class="hint">优先推荐明确标注助眠、耳语、采耳等标签且符合时长要求的作品；结合你的口味和关注，排除已听和不喜欢的作品。未知时长的备选排在后面，无法保证符合设定时间。</p>
     </section>
   {/if}
   <section class="filters panel" aria-label="音声筛选">
@@ -309,7 +311,7 @@
             {#if !creditsOf(work).length}<span class="hint">声优未知</span>{/if}
           </div>
           <p class="sub">{durationLabel(work.duration_seconds)} · {(work.languages ?? []).join(" / ") || "语言未知"} · {themesOf(work).join("、") || "尚无音声主题标签"}</p>
-          {#if tab === "bedtime"}<p class="reason">{bedtimeReason(work, bedtimeMinutes, prefs.data.tasteProfile, audioLibrary.data.following)?.reason}</p>{/if}
+          {#if tab === "bedtime"}<p class="reason">{bedtimeReason(work, bedtimeMinutes, prefs.data.tasteProfile, audioLibrary.data.following, bedtimeUnknown)?.reason}</p>{/if}
           {#if (groups.get(work.id)?.length ?? 1) > 1}
             <div class="chips"><span class="hint">官方关联版本：</span>
               {#each (groups.get(work.id) ?? []).filter((id) => id !== work.id) as id (id)}

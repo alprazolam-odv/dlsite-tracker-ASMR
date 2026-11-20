@@ -560,7 +560,8 @@ def cmd_audio_details(cfg: Config, args: argparse.Namespace) -> int:
         filled, failed = 0, 0
         for row in rows:
             ident, site = row["workno"], row["site"]
-            if not audio_workno(ident) or site not in cfg.sites:
+            # maniax 榜单也可能收录官方标为 home 的全年龄音声；仅补齐库内作品。
+            if not audio_workno(ident) or site not in [*cfg.sites, "home"]:
                 continue
             try:
                 duration = row["duration_seconds"]

@@ -87,14 +87,14 @@ export function editionGroups(works: Work[]): Map<string, string[]> {
   }
   return new Map([...groups.values()].flatMap((ids) => ids.map((id) => [id, ids] as const)));
 }
-export function uniqueEditions<T extends Work>(works: T[], groups = editionGroups(works)): T[] {
+export function uniqueEditions<T extends Work>(works: T[], groups = editionGroups(works), preferOriginal = true): T[] {
   const originals = new Set(works.map((w) => w.original_id).filter(Boolean));
   const selected = new Map<string, T>();
   for (const w of works) {
     // 优先保留筛选范围内的原版；原版不符合条件时保留排序最靠前的可见译版。
     const group = (groups.get(w.id) ?? [w.id]).slice().sort()[0];
     const current = selected.get(group);
-    if (!current || (!originals.has(current.id) && originals.has(w.id))) selected.set(group, w);
+    if (!current || (preferOriginal && !originals.has(current.id) && originals.has(w.id))) selected.set(group, w);
   }
   const keep = new Set([...selected.values()].map((w) => w.id));
   return works.filter((w) => keep.has(w.id));
@@ -103,17 +103,18 @@ export function recent(work: Work, now = Date.now()): boolean {
   const date = Date.parse((work.regist_date ?? "").slice(0, 10) + "T00:00:00");
   return Number.isFinite(date) && date <= now && now - date < 14 * 86400_000;
 }
-export function bedtimeReason(work: Work, minutes: number, taste: Record<string, string>, following: Credit[]): { score: number; reason: string } | null {
+export function bedtimeReason(work: Work, minutes: number, taste: Record<string, string>, following: Credit[], allowUnknown = false): { score: number; reason: string } | null {
   if (!Number.isFinite(minutes) || minutes <= 0) return null;
   const tags = themesOf(work);
   const relax = tags.filter((tag) => ["助眠与放松", "耳语与低语", "治愈陪伴", "采耳", "环境音与音效"].includes(tag));
-  if (!relax.length || !work.duration_seconds || work.duration_seconds > minutes * 60) return null;
+  const unknown = !work.duration_seconds || work.duration_seconds <= 0;
+  if (!relax.length || (unknown ? !allowUnknown : work.duration_seconds! > minutes * 60)) return null;
   const raw = (work.category ?? "").split(/[、,，/|]+/).map((x) => x.trim());
   const liked = raw.filter((tag) => taste[tag] === "love" || taste[tag] === "like");
   if (raw.some((tag) => taste[tag] === "less")) return null;
   const follows = following.filter((credit) => hasCredit(work, credit));
   return {
-    score: relax.length * 3 + liked.length * 3 + follows.length * 4 + (work.rating_precise ?? work.rating ?? 0),
-    reason: [...relax, ...follows.map((c) => `关注声优 ${c.name}`), ...liked].slice(0, 5).join(" · "),
+    score: (unknown ? -1000 : 0) + relax.length * 3 + liked.length * 3 + follows.length * 4 + (work.rating_precise ?? work.rating ?? 0),
+    reason: [...(unknown ? ["时长未知，备选"] : []), ...relax, ...follows.map((c) => `关注声优 ${c.name}`), ...liked].slice(0, 5).join(" · "),
   };
 }

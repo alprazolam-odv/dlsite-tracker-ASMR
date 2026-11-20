@@ -19,6 +19,7 @@ test("versions grouped only by explicit identifiers and filtered translation ret
   const groups = editionGroups([translated, source, unrelated]);
   assert.deepEqual(uniqueEditions([translated, source, unrelated], groups).map((x) => x.id), [source.id, unrelated.id]);
   assert.deepEqual(uniqueEditions([translated, unrelated], groups).map((x) => x.id), [translated.id, unrelated.id]);
+  assert.deepEqual(uniqueEditions([translated, source], groups, false).map((x) => x.id), [translated.id]);
 });
 
 test("bedtime recommendation requires a known fitting duration and respects disliked tags", () => {
@@ -27,4 +28,7 @@ test("bedtime recommendation requires a known fitting duration and respects disl
   assert.equal(bedtimeReason(known, 20, {}, []), null);
   assert.equal(bedtimeReason(known, 30, { 助眠: "less" }, []), null);
   assert.equal(bedtimeReason(work("RJ100001"), 60, {}, []), null);
+  const candidate = bedtimeReason(work("RJ100001"), 60, {}, [], true);
+  assert.ok(candidate.reason.includes("时长未知"));
+  assert.ok(candidate.score < bedtimeReason(known, 60, {}, []).score);
 });
