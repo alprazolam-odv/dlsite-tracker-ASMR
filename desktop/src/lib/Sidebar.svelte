@@ -489,8 +489,8 @@
     {#if prefs.data.sections.filters}
       <div class="section-body" transition:slide={{ duration: SECTION_DURATION }}>
         <div class="block">
-          <div class="cap">游戏名或制作者</div>
-          <input class="box" placeholder="搜索" bind:value={filter.keyword} />
+          <label class="cap" for="work-search">作品名、社团或声优</label>
+          <input id="work-search" class="box" placeholder="搜索" bind:value={filter.keyword} />
         </div>
         <div class="block">
           <div class="cap" title="已识别；多选取交集，同时满足全部所选">分类 / 标签</div>

@@ -38,7 +38,7 @@ SELECT w.workno, w.site, w.product_name, w.maker_name, w.maker_id, w.work_type, 
        w.rank_day_current, w.rank_week_current, w.rank_month_current,
        w.rank_trend_current,
        w.rank_current_seen_at,
-       w.regist_date, w.sales_seen_at, w.genres_json, w.options, w.wishlist_count
+       w.regist_date, w.sales_seen_at, w.genres_json, w.options, w.wishlist_count, w.voice_actors
 FROM works w
 """
 
@@ -52,7 +52,7 @@ CSV_COLUMNS = [
     "rank_day_current", "rank_week_current", "rank_month_current",
     "rank_trend_current", "rank_current_seen_at",
     "work_type", "regist_date", "sales_seen_at",
-    "maker_id", "voice", "music", "video",
+    "maker_id", "voice_actors", "voice", "music", "video",
 ]
 
 COVER_EXTENSIONS = ("jpg", "jpeg", "png", "webp", "gif")
@@ -164,6 +164,7 @@ def build_record(
         "regist_date": row["regist_date"],
         "sales_seen_at": row["sales_seen_at"],
         "maker_id": row["maker_id"] or "",
+        "voice_actors": row["voice_actors"] or "",
         "voice": "SND" in tokens,
         "music": "MS2" in tokens,
         "video": "MV2" in tokens,

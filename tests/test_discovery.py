@@ -83,7 +83,7 @@ class FakeFetcher:
 
 def _config(base: Path) -> Config:
     path = base / "config.ini"
-    path.write_text("[scope]\nsites = maniax\n", encoding="utf-8")
+    path.write_text("[scope]\nsites = maniax\n[discovery]\nlist_work_types = game\n", encoding="utf-8")
     return Config.load(path)
 
 
@@ -173,6 +173,21 @@ class RankingsTest(unittest.TestCase):
             RANKING_URL.format(site="maniax", term=term, category="game"): RANKING_HTML
             for term in ("day", "week", "month")
         }
+
+    def test_audio_rank_rejects_overall_ranking(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = _config(Path(tmp))
+            store = self._store(tmp)
+            try:
+                url = RANKING_URL.format(site="maniax", term="day", category="voice") + "&sub=SOU"
+                with self.assertRaisesRegex(ValueError, "未返回音声榜"):
+                    fetch_rankings(FakeFetcher({url: "<title>综合排行榜</title>" + RANKING_HTML}),
+                                   store, cfg, terms=["day"])
+                result = fetch_rankings(FakeFetcher({url: "<title>音声・ASMR排行榜</title>" + RANKING_HTML}),
+                                        store, cfg, terms=["day"])
+                self.assertEqual(result["views"], 1)
+            finally:
+                store.close()
 
     def test_category_views_write_ranks(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -112,6 +112,9 @@ def _continue_deeper_start_page(cfg: Config, target_years: float) -> int:
     - 无页号（如编号来源导入）→ 用边界日期 + 页↔日期实测校准点估算
     - 无记录 → 从第 1 页正常开始；目标不比已覆盖更深时直接报错
     """
+    if (getattr(cfg, "list_work_types", None) or ["game"])[0] == "audio":
+        print("[导入] 从最新音声目录重新定位日期，已入库作品会跳过")
+        return 0
     path = cfg.out_dir / "import-coverage.json"
     if not path.is_file():
         print("[导入] 尚无已覆盖记录（未完成过目录遍历导入）；本次从第 1 页正常开始")
@@ -185,7 +188,7 @@ def cmd_status(cfg: Config) -> int:
         print(
             f"导入任务：  {years_label(job['years'])} · 来源 {job_source} · "
             f"已入库 {job['enriched']} · "
-            f"排除非游戏 {job['excluded']} · 忽略低销旧作 {job['skipped']} · "
+            f"排除其他类型 {job['excluded']} · 忽略低销旧作 {job['skipped']} · "
             f"失败 {job['failed']} · 剩余 {remaining}"
         )
     for site, value in sorted(stats["last_seen"].items()):
@@ -750,7 +753,7 @@ def cmd_import_recent(cfg: Config, args: argparse.Namespace) -> int:
             print(
                 f"[导入] 任务：{years_label(job['years'])} · 来源 {job_source} · "
                 f"阶段 {job['phase']} · "
-                f"已入库 {job['enriched']} · 排除非游戏 {job['excluded']} · "
+                f"已入库 {job['enriched']} · 排除其他类型 {job['excluded']} · "
                 f"忽略低销旧作 {job['skipped']} · 失败 {job['failed']} · 剩余 {remaining}"
             )
             if job_source == SOURCE_CATALOG and not int(job.get("walk_done") or 0):
@@ -793,19 +796,19 @@ def cmd_import_recent(cfg: Config, args: argparse.Namespace) -> int:
                 and str(job["years"]) == str(years)
                 and int(job.get("walk_done") or 0)
             ):
-                hint = _pages_hint(str(years))
+                hint = "" if cfg.list_work_types == ["audio"] else _pages_hint(str(years))
                 detail = f"（100 件/页、≥10s/页{hint and '；按实测密度约 ' + hint}）"
                 print(
-                    f"[导入] 试算（{years_label(years)}，来源=游戏目录遍历）："
-                    f"逐页枚举游戏目录{detail}"
+                    f"[导入] 试算（{years_label(years)}，来源=作品目录遍历）："
+                    f"逐页枚举作品目录{detail}"
                 )
                 if cfg.import_min_sales > 0:
                     print(
-                        "[导入] 候选 = 目录内未入库游戏；随后仅对「新作窗」或「卡面销量 ≥ "
-                        f"{cfg.import_min_sales}」的游戏批量实查；老且低销零请求跳过"
+                        "[导入] 候选 = 目录内未入库作品；随后仅对「新作窗」或「卡面销量 ≥ "
+                        f"{cfg.import_min_sales}」的作品批量实查"
                     )
                 else:
-                    print("[导入] 门槛未启用：目录内全部未入库游戏将逐件富化（每件 ≈1.2 秒）")
+                    print("[导入] 门槛未启用：范围内未入库作品将逐件补齐资料")
                 print("[导入] 断点续传，可分段/过夜跑")
                 return 0
             if job is not None and str(job["years"]) == str(years):
@@ -916,7 +919,7 @@ def cmd_import_recent(cfg: Config, args: argparse.Namespace) -> int:
             )
             store.finish_run(run_id, True, note)
             print(
-                f"[导入] 本次：入库 {session['enriched']} · 排除非游戏 {session['excluded']} "
+                f"[导入] 本次：入库 {session['enriched']} · 排除其他类型 {session['excluded']} "
                 f"· 忽略低销旧作 {session['skipped']} · 失败 {session['failed']}"
             )
             print(

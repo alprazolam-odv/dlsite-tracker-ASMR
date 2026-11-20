@@ -48,51 +48,25 @@ fn allow_data_dir(app: &AppHandle, data_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// 自动发现 works.json：先沿可执行文件向上 10 级（开发 / 本地打包场景会直接命中仓库的
-/// out/works.json），再检查常见目录（code / Code / Projects / Documents / Desktop /
-/// 主目录，各扫一层子目录找 `<项目>/out/works.json`）。
+/// 只自动查找音声版自己的数据，避免绑定其他应用的项目文件。
 fn discover_data_file(app: &AppHandle) -> Option<PathBuf> {
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Ok(exe) = std::env::current_exe() {
-        let mut dir = exe.parent().map(|path| path.to_path_buf());
-        for _ in 0..10 {
-            let Some(current) = dir else { break };
-            candidates.push(current.join("out").join("works.json"));
-            dir = current.parent().map(|path| path.to_path_buf());
-        }
-    }
-    if let Ok(home) = app.path().home_dir() {
-        let bases = [
-            home.join("code"),
-            home.join("Code"),
-            home.join("Projects"),
-            home.join("Documents"),
-            home.join("Desktop"),
-            home.clone(),
-        ];
-        for base in bases {
-            candidates.push(base.join("dlsite-tracker").join("out").join("works.json"));
-            if let Ok(entries) = fs::read_dir(&base) {
-                for entry in entries.flatten() {
-                    if entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
-                        candidates.push(entry.path().join("out").join("works.json"));
-                    }
-                }
-            }
-        }
-    }
-    // 内嵌管道初始化后的默认位置（优先级最低，不改变既有发现行为）。
-    if let Ok(config_dir) = app.path().app_config_dir() {
-        candidates.push(config_dir.join("pipeline").join("out").join("works.json"));
-    }
-    candidates.into_iter().find(|path| path.is_file())
+    let path = app.path().app_config_dir().ok()?.join("pipeline/out/works.json");
+    path.is_file().then_some(path)
+}
+
+fn is_audio_export(path: &Path) -> bool {
+    let Ok(raw) = fs::read_to_string(path) else { return false };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else { return false };
+    value["works"].as_array().is_some_and(|works| {
+        !works.is_empty() && works.iter().all(|work| work["work_type"] == "SOU")
+    })
 }
 
 /// 返回最近使用的数据文件路径（未设置或已失效时尝试自动发现并绑定；都没有则为 null）。
 #[tauri::command]
 fn get_data_path(app: AppHandle) -> Option<String> {
     if let Some(path) = read_settings(&app).data_path {
-        if Path::new(&path).is_file() {
+        if discover_data_file(&app).as_deref() == Some(Path::new(&path)) || is_audio_export(Path::new(&path)) {
             return Some(path);
         }
     }
@@ -120,7 +94,7 @@ async fn pick_data_file(app: AppHandle) -> Result<Option<String>, String> {
     let mut dialog = app
         .dialog()
         .file()
-        .set_title("选择游戏数据文件")
+        .set_title("选择音声作品数据文件")
         .add_filter("works.json", &["json"]);
     if let Some(dir) = current.as_deref().and_then(|p| Path::new(p).parent()) {
         dialog = dialog.set_directory(dir);
@@ -129,6 +103,9 @@ async fn pick_data_file(app: AppHandle) -> Result<Option<String>, String> {
         return Ok(None);
     };
     let path = picked.into_path().map_err(|e| e.to_string())?;
+    if !is_audio_export(&path) {
+        return Err("此文件不是音声作品库，或没有可导入的音声作品。".into());
+    }
     allow_data_dir(&app, &path)?;
     write_settings(
         &app,
@@ -408,7 +385,7 @@ fn ensure_pipeline_config(dir: &Path) -> Result<(), String> {
     fs::create_dir_all(dir).map_err(|e| format!("无法创建数据目录：{e}"))?;
     fs::write(
         &config,
-        "# 同人游戏雷达 · 由桌面应用内嵌管道自动维护\n# data_dir / out_dir 默认相对本文件所在目录解析，如需调整可在此覆盖。\n[general]\n",
+        "# 同人音声雷达 · 由桌面应用内嵌管道自动维护\n# data_dir / out_dir 默认相对本文件所在目录解析，如需调整可在此覆盖。\n[general]\n",
     )
     .map_err(|e| format!("无法写入管道配置：{e}"))
 }

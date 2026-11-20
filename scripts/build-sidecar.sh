@@ -18,11 +18,11 @@ case "$(uname -s)" in
 esac
 
 PYTHON="${DLST_PYTHON:-python3}"
-if ! command -v "$PYTHON" >/dev/null 2>&1; then
+if ! "$PYTHON" -c 'import sys; sys.exit(sys.version_info < (3, 9))' >/dev/null 2>&1; then
   PYTHON=python
 fi
-if ! command -v "$PYTHON" >/dev/null 2>&1; then
-  echo "未找到 Python（可用 DLST_PYTHON 指定解释器）" >&2
+if ! "$PYTHON" -c 'import sys; sys.exit(sys.version_info < (3, 9))' >/dev/null 2>&1; then
+  echo "未找到可用的 Python 3.9+（可用 DLST_PYTHON 指定解释器）" >&2
   exit 1
 fi
 

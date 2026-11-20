@@ -50,6 +50,9 @@
     <span class="spacer"></span>
     <span class="id">{game.id}</span>
   </div>
+  {#if game.voice_actors}
+    <div class="hc-maker">声优：{game.voice_actors}</div>
+  {/if}
   {#if categories.length > 0}
     <CategoryChips {categories} />
   {/if}

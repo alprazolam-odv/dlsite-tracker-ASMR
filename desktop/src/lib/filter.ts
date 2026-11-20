@@ -20,7 +20,7 @@ export function viewFilterTitle(viewFilter: ViewFilter, collectionName: string):
 }
 
 export interface FilterState {
-  /** 游戏名或制作者（大小写不敏感包含匹配） */
+  /** 作品名、社团或声优（大小写不敏感包含匹配） */
   keyword: string;
   /** 评分区间（文本输入，允许空；"4,5" 视为 4.5） */
   ratingLow: string;
@@ -209,7 +209,8 @@ export function applyFilters(
     if (keyword) {
       const title = work.title.toLowerCase();
       const maker = (work.maker ?? "").toLowerCase();
-      if (!title.includes(keyword) && !maker.includes(keyword)) return false;
+      const actors = (work.voice_actors ?? "").toLowerCase();
+      if (!title.includes(keyword) && !maker.includes(keyword) && !actors.includes(keyword)) return false;
     }
     if (f.genres.length > 0) {
       const categories = categoriesOf(work);

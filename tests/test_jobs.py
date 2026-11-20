@@ -615,7 +615,7 @@ class UpdateAllTests(unittest.TestCase):
             )
             jobs.run_update_all(paths, years="2", runner=runner)
             state = json.loads((paths.out_dir / "update-progress.json").read_text(encoding="utf-8"))
-            self.assertEqual(state["detail"], "新增入库 12 部 · 排除非游戏 3 · 忽略低销旧作 5")
+            self.assertEqual(state["detail"], "新增入库 12 部 · 排除其他类型 3 · 忽略低销旧作 5")
 
     def test_import_busy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

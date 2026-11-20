@@ -25,8 +25,8 @@ LOG = logging.getLogger("dlsite_tracker.discovery")
 
 SITEMAP_INDEX_URL = "https://www.dlsite.com/modpub/sitemap-xml/indexes/{site}_index.xml"
 RANKING_URL = (
-    "https://www.dlsite.com/{site}/ranking/{term}/=/date/30d/category/{category}"
-    "?locale=zh_CN"  # P20.1：中文渲染——顺带解析的「分类导航」即官方中文分类名
+    "https://www.dlsite.com/{site}/ranking/{term}"
+    "?category={category}&locale=zh_CN"  # P20.1：中文渲染——顺带解析的「分类导航」即官方中文分类名
 )
 GENRE_LIST_URL = (
     "https://www.dlsite.com/{site}/works/type/=/work_type_category/{work_type}"
@@ -235,7 +235,14 @@ def fetch_rankings(
         for term in use_terms:
             for category in use_categories:
                 url = RANKING_URL.format(site=site, term=term, category=category)
+                audio_rank = category == "voice" and getattr(cfg, "default_work_types", []) == ["SOU"]
+                if audio_rank:
+                    url += "&sub=SOU"
                 html = fetcher.get_text(url, kind="page")
+                if audio_rank:
+                    title = re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)
+                    if not title or not re.search(r"(?:ASMR|音声|ボイス)", title.group(1), re.I):
+                        raise ValueError(f"DLsite 未返回音声榜，未写入该周期名次：{term}")
                 if not catalog_saved:
                     # P19.3：排行页侧栏含全量分类导航（198 项）——顺带存档供应用搜索/现导入
                     catalog = extract_genre_catalog(html)

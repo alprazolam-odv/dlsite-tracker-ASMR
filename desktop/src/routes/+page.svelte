@@ -1165,7 +1165,7 @@
 </script>
 
 <svelte:head>
-  <title>同人游戏雷达 · Doujin Game Radar</title>
+  <title>同人音声雷达</title>
 </svelte:head>
 
 <svelte:window onkeydown={onKeydown} onclick={onWindowClick} />
@@ -1212,7 +1212,7 @@
     <header class="header">
       <div class="brand">
         <div class="brand-line">
-          <div class="brand-title">同人游戏雷达</div>
+          <div class="brand-title">同人音声雷达</div>
           <button
             class="info-btn"
             title="数据来自你导入的文件。「更新」重读同一文件；「开始更新数据」运行本地管道（导入 → 销量 → 封面 → 导出），完成后自动刷新。收藏与偏好保存在本机。"
@@ -1632,7 +1632,7 @@
       </div>
     {:else}
       <div class="center">
-        <h1>同人游戏雷达 · Doujin Game Radar</h1>
+        <h1>同人音声雷达</h1>
         {#if initializing}
           <p>正在初始化数据…</p>
           <p class="hint">

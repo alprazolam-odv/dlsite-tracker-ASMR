@@ -33,7 +33,7 @@ import json
 import logging
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -164,9 +164,30 @@ def workno_in_window(workno: str, boundary_old: int, boundary_modern: int) -> bo
     return number >= boundary
 
 
-def catalog_source_name(site: str) -> str:
+def catalog_source_name(site: str, work_type: str = "game") -> str:
     """目录遍历登记用来源名（候选查询按 `catalog:` 前缀过滤）。"""
-    return f"{SOURCE_CATALOG}:{site}:game"
+    return f"{SOURCE_CATALOG}:{site}:{work_type}"
+
+
+def audio_catalog(cfg) -> bool:
+    return (getattr(cfg, "list_work_types", None) or ["game"])[0] == "audio"
+
+
+def audio_cutoff(job: Dict[str, Any]) -> Optional[date]:
+    years = str(job["years"]).lower()
+    if years == "all":
+        return None
+    if years.startswith("since:"):
+        return date(int(years.split(":", 1)[1]), 1, 1)
+    started = date.fromisoformat(str(job["started_at"])[:10])
+    return started - timedelta(days=365 * int(years))
+
+
+def release_day(value: Any) -> Optional[date]:
+    try:
+        return date.fromisoformat(str(value or "")[:10])
+    except ValueError:
+        return None
 
 
 def _download_covers_safe(cfg, fetcher, store: Store, limit: int) -> Dict[str, int]:
@@ -517,7 +538,13 @@ def run_catalog_walk(
     boundary_old = int(job["boundary_old"])
     boundary_modern = int(job["boundary_modern"])
     site = cfg.sites[0] if getattr(cfg, "sites", None) else "maniax"
-    source = catalog_source_name(site)
+    work_type = (getattr(cfg, "list_work_types", None) or ["game"])[0]
+    use_dates = audio_catalog(cfg)
+    cutoff = audio_cutoff(job) if use_dates else None
+    if use_dates:
+        # 日期在目录遍历时判断，队列查询不能再次用 RJ 编号近似过滤。
+        boundary_old = boundary_modern = 0
+    source = catalog_source_name(site, work_type)
     page = int(job.get("cursor_page") or 0)
     empty_pages = 0
     registered = 0
@@ -528,7 +555,7 @@ def run_catalog_walk(
         page += 1
         try:
             html = fetcher.get_text(
-                catalog_page_url(site, "game", page, CATALOG_PAGE_SIZE), kind="page"
+                catalog_page_url(site, work_type, page, CATALOG_PAGE_SIZE), kind="page"
             )
         except HttpError as exc:
             if page > 1 and "HTTP 404" in str(exc):
@@ -536,15 +563,26 @@ def run_catalog_walk(
             raise
         items = extract_catalog_items(html)
         if not items:
-            if page == 1:
-                raise ValueError("目录页解析为空（页面结构可能变化）：第 1 页")
+            if page == 1 or use_dates:
+                raise ValueError(f"目录页解析为空（页面结构可能变化）：第 {page} 页")
             break  # 空页（防御）：按结束处理
         sales = extract_sales(html)
-        in_window = [
-            workno
-            for workno in items
-            if workno_in_window(workno, boundary_old, boundary_modern)
-        ]
+        past_cutoff = False
+        if use_dates:
+            infos = fetch_product_info(fetcher, site, items) if cutoff else {}
+            release_days = {workno: release_day(infos.get(workno, {}).get("regist_date")) for workno in items}
+            in_window = [
+                workno for workno in items
+                if (cutoff is None or release_days[workno] is None or release_days[workno] >= cutoff)
+                and infos.get(workno, {}).get("work_type") in (None, "", "SOU")
+            ]
+            # 页面按发售时间从新到旧；日期缺失时不以该页判定结束。
+            past_cutoff = cutoff is not None and all(day is not None and day < cutoff for day in release_days.values())
+        else:
+            in_window = [
+                workno for workno in items
+                if workno_in_window(workno, boundary_old, boundary_modern)
+            ]
         fresh = store.filter_known_worknos(in_window)
         if fresh:
             store.add_catalog_pending(fresh, source=source)
@@ -574,9 +612,11 @@ def run_catalog_walk(
             flush=True,
         )
         walked += 1
+        if use_dates and (past_cutoff or len(items) < CATALOG_PAGE_SIZE):
+            break
         if max_pages is not None and walked >= max_pages:
             return registered  # P24：先回去处理已登记候选；游标已持久化，下段续走
-        if in_window:
+        if use_dates or in_window:
             empty_pages = 0
         else:
             empty_pages += 1
@@ -584,7 +624,7 @@ def run_catalog_walk(
                 break
         if len(items) < CATALOG_PAGE_SIZE:
             break  # 末页
-        if page >= CATALOG_MAX_PAGES:
+        if not use_dates and page >= CATALOG_MAX_PAGES:
             LOG.warning("目录遍历达到安全阀 %d 页，提前停止", CATALOG_MAX_PAGES)
             break
     store.update_import_job(
@@ -629,6 +669,10 @@ def run_import(
     source_kind = str(job.get("source") or SOURCE_NUMBERS)
     boundary_old = int(job["boundary_old"])
     boundary_modern = int(job["boundary_modern"])
+    audio_job = source_kind == SOURCE_CATALOG and audio_catalog(cfg)
+    cutoff = audio_cutoff(job) if audio_job else None
+    if audio_job:
+        boundary_old = boundary_modern = 0
     fresh_old = int(job["fresh_old"])
     fresh_modern = int(job["fresh_modern"])
     min_sales = int(job["min_sales"])
@@ -735,7 +779,10 @@ def run_import(
                 dl_count = info.get("dl_count")
                 work_type = str(info.get("work_type") or "")
                 age_days = _age_days(info.get("regist_date"))
-                if workno in prefilter_skipped:
+                released = release_day(info.get("regist_date"))
+                if cutoff is not None and released is not None and released < cutoff:
+                    store.finish_pending(workno)
+                elif workno in prefilter_skipped:
                     # P18 预筛命中：卡面销量低于门槛且编号明显早于新作窗 → 不实查直接跳过
                     store.finish_pending(workno)
                     session["skipped"] += 1
@@ -763,6 +810,8 @@ def run_import(
                     row = enrich_one(fetcher, store, cfg, workno, sources[workno])
                     if row is None:
                         session["failed"] += 1
+                    elif cutoff is not None and (released := release_day(row.get("regist_date"))) is not None and released < cutoff:
+                        store.delete_work(workno)
                     elif keep_types and str(row.get("work_type") or "") not in keep_types:
                         # 非游戏：记入排除清单并删除，避免下次再被候选选中
                         store.add_excluded(workno, row.get("work_type"))
@@ -824,7 +873,7 @@ def run_import(
                         print(f"[导出] 中途快照：{snapshot}", flush=True)
                 if processed % PRINT_EVERY == 0:
                     print(
-                        f"[导入] 入库 {session['enriched']} · 排除非游戏 {session['excluded']} "
+                        f"[导入] 入库 {session['enriched']} · 排除其他类型 {session['excluded']} "
                         f"· 忽略低销旧作 {session['skipped']} · 失败 {session['failed']} "
                         f"· 剩余 {remaining}",
                         flush=True,

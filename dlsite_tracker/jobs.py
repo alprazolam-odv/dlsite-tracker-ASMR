@@ -649,7 +649,7 @@ def _import_summary(out_dir: Path) -> str:
     """完成时的汇总文案（读取导入进度；缺失时回退）。"""
     try:
         job = json.loads((out_dir / "import-progress.json").read_text(encoding="utf-8"))
-        return "新增入库 {0} 部 · 排除非游戏 {1} · 忽略低销旧作 {2}".format(
+        return "新增入库 {0} 部 · 排除其他类型 {1} · 忽略低销旧作 {2}".format(
             job.get("enriched", 0), job.get("excluded", 0), job.get("skipped", 0)
         )
     except (OSError, ValueError):

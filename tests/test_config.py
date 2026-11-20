@@ -29,10 +29,10 @@ class ConfigTest(unittest.TestCase):
             self.assertEqual(cfg.sites, ["maniax", "girls"])
             self.assertEqual(cfg.page_delay, 10.0)
             self.assertEqual(cfg.rank_terms, ["day", "week", "month"])
-            self.assertIn("RPG", cfg.default_work_types)  # P9 游戏白名单默认值
+            self.assertEqual(cfg.default_work_types, ["SOU"])
             self.assertEqual(cfg.import_years, 0)  # P10 渐进导入默认关闭
             self.assertEqual(cfg.import_fresh_days, 90)  # P10 质量门槛默认值
-            self.assertEqual(cfg.import_min_sales, 2000)
+            self.assertEqual(cfg.import_min_sales, 0)
             self.assertEqual(cfg.import_cover_trigger, 1000)  # P12.1 封面自愈
             self.assertEqual(cfg.import_cover_batch, 300)
             self.assertEqual(cfg.genre_daily_pages, 1)  # P20 做减法默认

@@ -7,6 +7,7 @@ export interface Work {
   id: string;
   title: string;
   maker: string;
+  voice_actors?: string;
   category: string;
   form: string;
   sales: number | null;
@@ -127,7 +128,7 @@ export async function loadWorks(): Promise<LoadedData> {
   }
   // 统一为正斜杠，asset 协议在各平台上都能正确处理
   const base = dirOf(dataPath).replace(/\\/g, "/");
-  const works: WorkView[] = file.works.map((work) => ({
+  const works: WorkView[] = file.works.filter((work) => work.work_type === "SOU").map((work) => ({
     ...work,
     _cover: work.image_path ? convertFileSrc(`${base}/${work.image_path}`) : "",
   }));

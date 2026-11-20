@@ -103,6 +103,17 @@ def parse_product(
     options = parse_options(picked.get("work_attributes"))
 
     maker_id = picked.get("maker_id")
+    creators = picked.get("creaters")
+    credits = creators.get("voice_by") if isinstance(creators, dict) else None
+    actors = []
+    if isinstance(credits, list):
+        for entry in credits:
+            name = entry.get("name") if isinstance(entry, dict) else None
+            if isinstance(name, str) and name.strip() and name.strip() not in actors:
+                actors.append(name.strip())
+    legacy_voice = picked.get("voice_by")
+    if not actors and isinstance(legacy_voice, str) and legacy_voice.strip():
+        actors = [legacy_voice.strip()]
 
     row: Dict[str, Any] = {
         "workno": picked.get("workno") or workno,
@@ -110,6 +121,7 @@ def parse_product(
         "product_name": picked.get("work_name"),
         "maker_id": str(maker_id) if maker_id is not None else None,
         "maker_name": picked.get("maker_name"),
+        "voice_actors": " / ".join(actors),
         "work_category": picked.get("work_category"),
         "work_type": picked.get("work_type"),
         "work_type_string": picked.get("work_type_string"),
@@ -168,6 +180,10 @@ def enrich_one(
         LOG.warning("富化无有效数据：%s", workno)
         return None
     row, genres = parsed
+    if getattr(cfg, "default_work_types", []) == ["SOU"] and row.get("work_type") != "SOU":
+        store.add_excluded(workno, row.get("work_type"))
+        store.finish_pending(workno)
+        return row
     store.upsert_work(row)
     store.replace_genres(workno, genres)
     store.finish_pending(workno)
@@ -218,7 +234,8 @@ def enrich_pending(
         else:
             ok += 1
             consecutive = 0
-            enriched_worknos.append(workno)
+            if getattr(cfg, "default_work_types", []) != ["SOU"] or row.get("work_type") == "SOU":
+                enriched_worknos.append(workno)
         if order % 50 == 0:
             LOG.info("富化进行中：%d/%d（成功 %d 失败 %d）", order, len(batch), ok, fail)
             if observer is not None:

@@ -19,7 +19,7 @@ FLOORS: List[Tuple[str, str, float]] = [
 
 DEFAULTS = {
     "general": {"data_dir": "data", "out_dir": "out", "timezone": "Asia/Tokyo"},
-    "scope": {"sites": "maniax", "default_work_types": "RPG, SLN, ADV, ACN, STG, PZL, QIZ, TBL, DNV, ETC, TYP"},
+    "scope": {"sites": "maniax", "default_work_types": "SOU"},
     "http": {
         "page_delay_seconds": "10.0",
         "api_delay_seconds": "1.0",
@@ -31,15 +31,15 @@ DEFAULTS = {
     "discovery": {
         "sitemap_max_shards_per_run": "3",
         "rank_terms": "day, week, month",
-        "rank_categories": "game",
-        "genre_rank_ids": "016,502,048,510,526,317,046,004,536,432,533,509,519,431,012",
+        "rank_categories": "voice",
+        "genre_rank_ids": "",
         "genre_rank_pages": "2",
         "genre_daily_pages": "1",
         "trend_pages": "5",
-        "list_work_types": "game",
+        "list_work_types": "audio",
     },
     "enrich": {"batch_size_per_run": "400", "store_raw": "false", "hot_window_days": "7", "locale": "zh_CN"},
-    "import": {"years": "0", "fresh_days": "90", "min_sales": "2000", "cover_trigger": "1000", "cover_batch": "300"},
+    "import": {"years": "0", "fresh_days": "90", "min_sales": "0", "cover_trigger": "1000", "cover_batch": "300"},
     "images": {"enabled": "true", "max_per_run": "300", "workers": "4"},
     "serve": {"host": "127.0.0.1", "port": "8765"},
 }

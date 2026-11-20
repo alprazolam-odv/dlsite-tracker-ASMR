@@ -151,7 +151,7 @@ export function updateSummary(
       return `更新中${scope}：正在抓取热榜（榜单/列表/人气序）并富化新作…`;
     case "import":
       if (importProgress && importProgress.phase === "enrich") {
-        return `更新中${scope}：导入进行中 — 已入库 ${importProgress.enriched ?? 0} · 排除非游戏 ${importProgress.excluded ?? 0} · 忽略低销旧作 ${importProgress.skipped ?? 0} · 剩余 ${importProgress.remaining ?? 0}`;
+        return `更新中${scope}：导入进行中 — 已入库 ${importProgress.enriched ?? 0} · 排除其他类型 ${importProgress.excluded ?? 0} · 忽略低销旧作 ${importProgress.skipped ?? 0} · 剩余 ${importProgress.remaining ?? 0}`;
       }
       return `更新中${scope}：导入进行中（断点续传）`;
     case "sales":
@@ -191,10 +191,10 @@ export function importSummary(progress: ImportProgress): string {
         const done = Math.max(0, Math.min(total, total - remaining));
         percent = ` · 约 ${Math.round((done / total) * 100)}%`;
       }
-      return `渐进导入${stateText}：已入库 ${progress.enriched ?? 0} · 排除非游戏 ${progress.excluded ?? 0} · 忽略低销旧作 ${skipped} · 剩余 ${remaining}${percent}`;
+      return `渐进导入${stateText}：已入库 ${progress.enriched ?? 0} · 排除其他类型 ${progress.excluded ?? 0} · 忽略低销旧作 ${skipped} · 剩余 ${remaining}${percent}`;
     }
     case "done":
-      return `渐进导入已完成：新增入库 ${progress.enriched ?? 0} 部（排除非游戏 ${progress.excluded ?? 0}，忽略低销旧作 ${skipped}）`;
+      return `渐进导入已完成：新增入库 ${progress.enriched ?? 0} 部（排除其他类型 ${progress.excluded ?? 0}，忽略低销旧作 ${skipped}）`;
     default:
       return "";
   }

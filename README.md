@@ -1,126 +1,48 @@
-对原版项目的分类进行了移植，以便用于音声ASMR
+# 同人音声雷达 · DLsite Tracker ASMR
 
+一个在本机运行的 DLsite 同人音声浏览工具，从 [Faintimi/dlsite-tracker](https://github.com/Faintimi/dlsite-tracker) 的同人游戏雷达改造而来。
 
+默认追踪 DLsite 同人成人区（`maniax`）中的音声／ASMR 作品（`SOU`），范围不含音乐、游戏和其他作品类型。项目读取公开作品资料、销量、评分、榜单与封面；音频试听、购买和下载请前往 DLsite 原作品页。
 
+## 功能
 
+- 查看音声日榜、周榜和月榜，或按发售日期逐步导入历史作品。
+- 按作品名、社团或声优搜索，组合标签、发售年份、评分、销量与价格筛选。
+- 使用收藏夹、标签偏好和社团关注来整理作品。收藏与设置保存在本机。
+- 详情显示 DLsite 提供的声优署名。播放时长目前没有统一的数据字段可以直接读取；如制作者注明了总时长，请在原作品页查看。
 
-# 同人游戏雷达 · Doujin Game Radar
+## 从源码构建桌面版
 
-**中文** · [English](README_EN.md)
-
-> **不只浏览热榜，更要找到适合自己的作品。** 同人游戏雷达把 DLsite 的公开商品信息整理成 Windows / macOS 上的私人探索工作台：追踪新作与热度变化、组合筛选、建立口味、收藏与关注作者。作品数据、封面和个人偏好保存在本机。
->
-> *A local-first discovery workspace for DLsite doujin games: find emerging works, explore your taste, and keep up with creators on Windows and macOS.*
-
-- **本地优先**：不要求 DLsite 账号；作品库、封面、收藏与口味偏好保存在本机，无遥测或云端同步。更新时，数据管道会向 DLsite 请求公开商品信息。
-- **尊重来源**：管道遵守 robots 与礼貌限速，只读取公开商品元数据；作品购买与下载仍在官方商店完成。
-- **非官方项目**：与 DLsite 无关联；商店含成人向内容，本项目面向成年用户。
-
-## 为什么要用雷达？
-
-DLsite 是作品信息与购买的来源；雷达补充的是跨作品、跨时间、围绕你自己口味的探索流程。它不参与交易，也不把本机推测包装成官方结论。相比从单次搜索或榜单开始、逐部查看，雷达把下列任务串进一个可持续使用的工作台：
-
-| 常见起点 | 雷达进一步帮你做什么 |
-| --- | --- |
-| 看当下热榜，想找下一部黑马 | 「发现」结合本地销量快照变化与心愿单信号，分出冲刺中、高期待的新作；候选附理由，不把推测当成官方排名。 |
-| 搜索一个分类，想继续缩小范围 | 分类可交集筛选，并与作品形式、配音／音乐／动画标志、年份、销量、评分、价格、排除条件独立组合；已选条件可直接点掉。 |
-| 看完一部喜欢的作品，想找没看过的同好作 | 从喜欢的作品、收藏夹与语义主题建立「很喜欢／喜欢／少推荐」口味；遗珠分批探索，看过与不感兴趣的反馈留在本机。 |
-| 记住几个喜欢的作者，想跟进新作 | 关注更新集中展示近 14 天发布的作品，提供未读提示、按作者分组与一键检查。 |
-| 反复浏览，希望积累成自己的作品库 | 多收藏夹、分类人气榜、五种浏览视图；每日维护与渐进导入支持进度显示和断点续传，封面随任务补齐。 |
-
-精确评分也是一个例子：卡片保持易扫读的星级，悬停详情显示官方两位小数；精确分达到 4.70 的作品有独立颜色档位。这里的“销量变化”来自本机不同时间的公开数据快照，并非实时成交数据；口味匹配也是本机计算的建议，不是官方评价。
-
-## 它如何工作
-
-内置管道从 DLsite 公开页面及接口读取商品元数据，写入本机 SQLite，再导出 JSON / CSV 与封面缩略图。桌面界面读取本地导出文件；点击更新时，由本机管道联网维护数据，完成后界面自动重载。没有账号同步，也不代替官方作品页。首次建库与后续补齐所需时间取决于网络、作品数量及站点限速。
-
-## 先体验桌面版
-
-Windows / macOS 打包版内置数据管道，**使用时不需要 Python，也不需要克隆仓库**。从 [Release](https://github.com/Faintimi/dlsite-tracker/releases) 下载对应版本（Windows `.exe`；macOS `.dmg`），首次打开点「初始化数据」即可开始；更新过程会逐步显示已导入作品，封面随后补齐。**macOS 测试包尚未获得 Apple 公证，首次打开可能需要手动允许**；图形界面步骤与可选的命令行步骤见 [桌面版说明](desktop/README.md#macos-首次打开)。[Actions 构建产物](https://github.com/Faintimi/dlsite-tracker/actions/workflows/desktop-release.yml) 外层还会有一层 Artifact ZIP，不宜当作安装盘直接打开。上方功能介绍对应当前源码，已发布安装包的功能以各版本说明为准。
-
-## 命令行 / 开发者快速开始
-
-以下是单独运行数据管道的方式，需要 **macOS / Windows / Linux + Python ≥ 3.9**（仅标准库，无需 `pip install`）；桌面打包版不需要这些步骤。
+需要 Node.js（LTS）、Rust 和 Python 3.9 以上；Windows 另需 WebView2 和 Visual Studio C++ Build Tools，macOS 需要 Xcode 命令行工具。Windows 请用 Git Bash 执行打包脚本。
 
 ```bash
-git clone https://github.com/Faintimi/dlsite-tracker.git
-cd dlsite-tracker
-cp config.example.ini config.ini          # 本地配置（不入库；含节流参数说明）
-
-python3 -m dlsite_tracker init            # 初始化数据目录与数据库
-python3 -m dlsite_tracker update          # 每日更新（热榜模式）
-python3 -m dlsite_tracker import-recent --dry-run --years 1   # 试算「最近一年」导入规模（不联网）
-python3 -m dlsite_tracker import-recent --years 1             # 渐进导入（断点续传，可随时暂停）
-python3 -m dlsite_tracker export          # 导出 out/works.json + works.csv
-python3 -m dlsite_tracker --help          # 查看全部命令
-```
-
-一键链（与应用按钮同款）：
-
-```bash
-bash scripts/quick-update.sh              # 快版热榜更新（首次补齐精确评分时会更久）
-bash scripts/update-all.sh 1              # 导入最近一年 → 销量 → 封面 → 导出
-bash scripts/install-schedule.sh          # macOS：每日 23:30 自动维护（launchd，无需 sudo；卸载：uninstall-schedule.sh）
-```
-
-> 提示：由于严格遵循站点礼貌限速（页面 ≥10 秒/页），首次全量建立数据需要一些耐心；之后每天只做增量维护，很快。
-
-## 桌面应用
-
-两套界面任选（读取同一份 `out/works.json`；收藏与设置分别保存在各自应用目录，互不影响）：
-
-### 跨平台桌面版（Windows / macOS，推荐）
-
-- **Windows 直接下载**：见 [Actions「Desktop Build (Windows)」](https://github.com/Faintimi/dlsite-tracker/actions/workflows/desktop-release.yml) 最新一次运行的 Artifacts（`doujin-game-radar-windows-installer`），或 Release 页附件
-- **自行构建**（macOS / Windows 均可）：
-
-```bash
-bash scripts/build-sidecar.sh   # 先生成内嵌管道（打包前必须执行一次）
+git clone https://github.com/alprazolam-odv/dlsite-tracker-ASMR.git
+cd dlsite-tracker-ASMR
+bash scripts/build-sidecar.sh
 cd desktop
-npm install
-npm run tauri build        # 产物：src-tauri/target/release/bundle/（macOS：.app/.dmg；Windows：NSIS）
+npm ci
+npm run tauri build
 ```
 
-- 首次打开：点**「初始化数据」**一键搭建（内置数据管道，本机抓取热榜约 5–10 分钟、视网络，无需安装 Python）；已有数据文件时可用「选择数据文件」直接打开管道导出的 `out/works.json`
-- **「更新数据 ▾」**：立即更新热榜（快）/ 完整维护 / 继续抓更早（续深）/ 导入最近 N 年；顶部横幅实时显示进度，完成后列表自动刷新（打包版用内置管道，无额外依赖）
-- 功能：筛选（分类交集 / 年份 / 销量 / 价格 / 评分 / 收藏 / 关注作者）、排序、五种视图、悬停详情卡、收藏夹与右键菜单
-- 说明见 [`desktop/README.md`](desktop/README.md) / [`desktop/README_EN.md`](desktop/README_EN.md)
+构建产物在 `desktop/src-tauri/target/release/bundle/`。首次打开点「初始化数据」，应用会从音声榜建立作品库。想浏览更多旧作，可从更新菜单启动历史导入；所需时间取决于导入范围和站点限速。
 
-### macOS 原生版（SwiftUI）
+音声版使用独立的数据目录，不会自动接管游戏版数据库。Windows 默认作品库位于 `%APPDATA%\com.faintimi.doujin-audio-radar\pipeline\`。如需手动选择数据文件，请使用本项目导出的音声 `works.json`。
+
+## 命令行
+
+仅运行数据管道时只需 Python 3.9 以上，无需安装运行依赖。在仓库根目录把 `config.example.ini` 复制为 `config.ini`，再执行：
 
 ```bash
-bash scripts/build-app.sh                 # 构建（仅需 Xcode Command Line Tools）
-open "app/dist/同人游戏筛选器.app"
+python -m dlsite_tracker init
+python -m dlsite_tracker task quick
+python -m dlsite_tracker import-recent --years 1
+python -m dlsite_tracker export
 ```
 
-应用内「选择数据文件」→ 选择导出的 `out/works.json`。此版读取同一份导出文件，但新发现、口味与关注更新等功能以跨平台桌面版为准。说明见 [`app/README.md`](app/README.md) / [`app/README_EN.md`](app/README_EN.md)。
+`out/` 中包含 `works.json`、`works.csv` 与本地封面。历史导入依据官方发售日期判断范围，遇到日期缺失时保留候选；默认不按销量排除旧作。
 
-## 隐私与安全
+## 来源与许可
 
-- 不登录、不使用账号 / Cookie / 令牌；不抓取任何用户内容
-- 采集仅限公开页面与站点公开接口，严格遵循 robots（含 `Crawl-delay: 10`）
-- 数据与封面写在本机 `data/` 与 `out/`（均已 gitignore，不入库）；桌面收藏与口味偏好也保存在本机
-- 桌面界面读取本地数据；点击「更新数据」会在本机启动管道，管道向 DLsite 请求公开元数据，不上传收藏与口味偏好
-- 本仓库只包含代码与文档，不含任何个人数据或商品内容
+仅使用公开商品资料，无需 DLsite 账号，采集保留站点的 robots 规则和限速。本项目与 DLsite 无官方关联，沿用上游 [MIT 许可](LICENSE)。
 
-## 数据来源与合规
-
-| 来源 | 用途 | 约束 |
-| --- | --- | --- |
-| Sitemap | 全量 / 增量发现作品 | 官方提供给爬虫的公开入口 |
-| `product.json` | 单作品详情（名称 / 社团 / 价格 / 评分 / 分类…） | 公开 JSON |
-| `product/info/ajax`（批量 80 件/请求） | 销量 / 心愿单数 / 精确评分 / 类型 / 上架日 | 站内公开接口；节流限速 |
-| 榜单页 / 列表页 / 分类人气 / 人气序 | 名次与销量快照 | 每页 ≥10 秒间隔 |
-
-- 请在使用前阅读 DLsite 的使用条款与 robots 规则；本项目仅供个人学习与研究使用
-- 输出数据的大规模再分发、商业用途请自行评估合规性
-
-## License
-
-[MIT](LICENSE) © 2026 Faintimi · 非官方项目，与 DLsite 无关联
-
-## English quick notes
-
-- **What**: local-first DLsite doujin-game browsers (cross-platform desktop app for Windows/macOS + a native macOS app), backed by a robots-compliant daily data pipeline (Python standard library, zero dependencies).
-- **Quick start**: packaged Windows/macOS builds include the pipeline and initialize locally without Python; developers can run `python3 -m dlsite_tracker update` and export `out/works.json`.
-- **Privacy**: no account or telemetry; library and preferences stay local. The update pipeline requests public metadata from DLsite. Unofficial project — obey DLsite's terms & robots.
+[English](README_EN.md)
