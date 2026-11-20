@@ -1,3 +1,9 @@
+对原版项目的分类进行了移植，以便用于音声ASMR
+
+
+
+
+
 # 同人游戏雷达 · Doujin Game Radar
 
 **中文** · [English](README_EN.md)
