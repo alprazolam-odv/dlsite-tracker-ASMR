@@ -28,6 +28,8 @@ npm run tauri build
 
 音声版使用独立的数据目录，不会自动接管游戏版数据库。Windows 默认作品库位于 `%APPDATA%\com.faintimi.doujin-audio-radar\pipeline\`。如需手动选择数据文件，请使用本项目导出的音声 `works.json`。
 
+数据采集自动使用 Windows 系统代理或环境变量（`HTTP_PROXY`、`HTTPS_PROXY`），支持 HTTP/混合代理端口。如果没有代理设置，则直接联网。
+
 ## 命令行
 
 仅运行数据管道时只需 Python 3.9 以上，无需安装运行依赖。在仓库根目录把 `config.example.ini` 复制为 `config.ini`，再执行：

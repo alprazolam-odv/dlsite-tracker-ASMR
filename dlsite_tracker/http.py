@@ -5,7 +5,7 @@
 - 持久连接（keep-alive，P14）：按主机复用连接，避免每次请求重复 TLS 握手
   （单张封面实测握手 180–370ms，是主要固定开销）；复用连接被服务器空闲关闭时立即换新连接重试；
 - 429 与 5xx 指数退避，优先遵守 Retry-After；3xx 自动跟随（最多 5 跳）；
-- 注意：改用 http.client 后不再读取环境代理变量（原 urllib 隐式行为）；如需代理支持请提出；
+- 自动读取系统代理与环境代理（HTTP 代理；HTTPS 使用 CONNECT 隧道），仍复用连接；
 - 每次网络命令启动时校验 robots.txt 的关键规则，异常即中止；
 - 线程模型：同一 Fetcher 不跨线程共享；图片并发由工作线程各自持有克隆 Fetcher
   （各自节流与连接池）；计数可通过 counters / counter_lock 共享。
@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import http.client
+import base64
 import json
 import logging
 import re
@@ -21,7 +22,8 @@ import ssl
 import threading
 import time
 from typing import Any, Dict, Optional
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
+from urllib.request import getproxies, proxy_bypass
 
 LOG = logging.getLogger("dlsite_tracker.http")
 
@@ -76,6 +78,7 @@ class Fetcher:
         self._counter_lock = counter_lock if counter_lock is not None else threading.Lock()
         self._robots_ok = False
         self._conns: Dict[str, http.client.HTTPConnection] = {}
+        self._proxies = getproxies()
 
     @classmethod
     def from_config(
@@ -123,16 +126,37 @@ class Fetcher:
             "Accept-Encoding": "identity",
         }
 
-    def _connection(self, scheme: str, host: str, port: int) -> http.client.HTTPConnection:
+    def _proxy_for(self, scheme: str, host: str):
+        value = self._proxies.get(scheme) or self._proxies.get("all")
+        if not value or proxy_bypass(host):
+            return None
+        proxy = urlsplit(value if "://" in value else f"http://{value}")
+        if proxy.scheme != "http" or not proxy.hostname:
+            raise _Fatal("当前代理协议不受支持，请使用 HTTP 或混合代理端口")
+        return proxy
+
+    @staticmethod
+    def _proxy_headers(proxy) -> Dict[str, str]:
+        if proxy is None or proxy.username is None:
+            return {}
+        credentials = f"{unquote(proxy.username)}:{unquote(proxy.password or '')}"
+        token = base64.b64encode(credentials.encode("utf-8")).decode("ascii")
+        return {"Proxy-Authorization": f"Basic {token}"}
+
+    def _connection(self, scheme: str, host: str, port: int, proxy=None) -> http.client.HTTPConnection:
         key = f"{scheme}://{host}:{port}"
         conn = self._conns.get(key)
         if conn is None:
+            connect_host = proxy.hostname if proxy else host
+            connect_port = (proxy.port or 80) if proxy else port
             if scheme == "https":
                 conn = http.client.HTTPSConnection(
-                    host, port, timeout=self.timeout, context=ssl.create_default_context()
+                    connect_host, connect_port, timeout=self.timeout, context=ssl.create_default_context()
                 )
+                if proxy:
+                    conn.set_tunnel(host, port, headers=self._proxy_headers(proxy))
             else:
-                conn = http.client.HTTPConnection(host, port, timeout=self.timeout)
+                conn = http.client.HTTPConnection(connect_host, connect_port, timeout=self.timeout)
             self._conns[key] = conn
         return conn
 
@@ -174,9 +198,14 @@ class Fetcher:
             port = parts.port or (443 if scheme == "https" else 80)
             path = urlunsplit(("", "", parts.path or "/", parts.query, ""))
             reused = f"{scheme}://{host}:{port}" in self._conns
-            conn = self._connection(scheme, host, port)
+            proxy = self._proxy_for(scheme, host)
+            conn = self._connection(scheme, host, port, proxy)
+            headers = self._headers()
+            if proxy and scheme == "http":
+                path = urlunsplit((scheme, parts.netloc, parts.path or "/", parts.query, ""))
+                headers.update(self._proxy_headers(proxy))
             try:
-                conn.request("GET", path, headers=self._headers())
+                conn.request("GET", path, headers=headers)
                 response = conn.getresponse()
                 status = response.status
                 if status in (301, 302, 303, 307, 308):
