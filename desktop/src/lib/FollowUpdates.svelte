@@ -7,6 +7,7 @@
   import type { WorkView } from "$lib/api";
   import { type Credit } from "$lib/audio";
   import { makerKeyOf } from "$lib/filter";
+  import VoiceLine from "./VoiceLine.svelte";
   import type { FollowedMaker } from "$lib/library.svelte";
   import Cover from "./Cover.svelte";
   import { categoriesOf } from "./ui";
@@ -228,6 +229,13 @@
       <span class="title">{work.title}</span>
     </button>
     <span class="date">{ageLabel(work.regist_date)}</span>
+    {#if tab === "tag" && (work.maker || work.maker_id)}
+      <button class="name" title="查看该社团的作品" onclick={() => onmaker({
+        key: makerKeyOf(work.maker, work.maker_id), name: work.maker || work.maker_id || "",
+        maker_id: work.maker_id ?? "",
+      })}>{work.maker || work.maker_id}</button>
+    {/if}
+    <VoiceLine game={work} {onvoice} />
     {#if categoriesOf(work).length}<FollowTags tags={categoriesOf(work)} />
     {:else}<span class="date">暂无作品标签</span>{/if}
     <QuickFollowButton {work} />

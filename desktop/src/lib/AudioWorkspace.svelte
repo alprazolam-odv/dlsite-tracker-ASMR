@@ -4,7 +4,7 @@
   import type { WorkView, Profile } from "./api";
   import {
     AUDIO_THEMES, LISTEN_LABELS, actorDirectory, bedtimeReason, creditKey,
-    creditsOf, durationLabel, editionGroups, hasCredit, sameCredit, themesOf,
+    creditsOf, dlsiteVoiceSearch, durationLabel, editionGroups, hasCredit, sameCredit, themesOf,
     uniqueEditions, type Credit, type ListenState,
   } from "./audio";
   import { audioLibrary } from "./audio.svelte";
@@ -41,7 +41,7 @@
   let duration = $state("");
   let bedtimeMinutes = $state(90);
   let bedtimeUnknown = $state(true);
-  let collapseVersions = $state(true);
+  let collapseVersions = $state(untrack(() => !initialActor));
   let maxRows = $state(40);
   let actorLimit = $state(12);
   let scanning = $state(false);
@@ -129,6 +129,7 @@
     }
     switchTab("browse");
     selected = [credit];
+    collapseVersions = false;
   }
   function toggleActor(credit: Credit) {
     selected = selected.some((c) => sameCredit(c, credit))
@@ -167,7 +168,7 @@
   {#if !embedded}
   <header class="workspace-title">
     <div>
-      <h2>{profile ? profile.name : "声优目录"}</h2>
+      <h2>{profile ? `${profile.name} · 声优作品` : "声优目录"}</h2>
     </div>
     <button onclick={onclose}>{closeLabel}</button>
   </header>
@@ -178,12 +179,12 @@
     <button disabled={scanning} onclick={scan}>{scanning ? "识别中…" : "识别本地音频"}</button>
     <button disabled={detailsBusy} onclick={() => void fillDetails()}>{detailsBusy ? "补齐中…" : "补齐音声资料（10 部）"}</button>
   </nav>
-  <details class="actors" open={tab === "browse"}>
+  <details class="actors" open={tab === "browse" && !profile}>
     <summary>声优目录 · {directory.length} 位</summary>
     <div class="actor-search">
       <label>搜索声优 <input placeholder="姓名" bind:value={actorQuery} oninput={() => (actorLimit = 12)} /></label>
       <button onclick={() => (selected = [])} disabled={!selected.length}>清除声优筛选</button>
-      <span class="hint">点击姓名打开主页；「加入」可筛选多位声优的合作作品。</span>
+      <span class="hint">点击姓名查看作品；「加入」可筛选多位声优的合作作品。</span>
     </div>
     <div class="actor-grid">
       {#each actorResults.slice(0, actorLimit) as { credit, count } (creditKey(credit))}
@@ -207,7 +208,8 @@
   {#if profile}
     <section class="panel">
       <div class="toolbar">
-        <h3>{profile.name} · 声优主页（{profileWorks.length} 部）</h3>
+        <h3>雷达目录 · {profileWorks.length} 部</h3>
+        <button onclick={() => onopen(dlsiteVoiceSearch(ageProfile, profile!.name))}>在 DLsite 搜索声优作品</button>
         <button class:active={audioLibrary.isFollowing(profile)} onclick={() => audioLibrary.toggle(profile!)}>{audioLibrary.isFollowing(profile) ? "取消关注" : "关注声优"}</button>
         <button onclick={() => (selected = [])}>全部音声</button>
       </div>

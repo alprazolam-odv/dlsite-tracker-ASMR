@@ -35,7 +35,7 @@
 </div>
 
 <style>
-  .follow { position: absolute; top: 35px; left: 6px; }
+  .follow { position: absolute; top: 46px; left: 6px; }
   .tile {
     position: relative;
     height: 196px;
@@ -55,6 +55,11 @@
   .tile :global(.cover) {
     width: 100%;
     height: 100%;
+  }
+
+  .tile :global(.privacy-label) {
+    align-self: center;
+    margin: 0;
   }
 
   /* 悬停覆盖层：渐变 + 标题 + 标志/价格（对齐 CoverWallTile） */

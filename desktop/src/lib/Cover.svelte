@@ -28,9 +28,10 @@
   );
 </script>
 
-<div class="cover" class:rounded class:private={prefs.data.hideImages} style={style}>
+<div class="cover" class:rounded class:private={prefs.data.hideImages}
+  class:marked={collected || excluded || unknown} style={style}>
   {#if prefs.data.hideImages}
-    <span class="privacy-label">已隐藏</span>
+    <span class="privacy-label">封面隐藏</span>
   {:else if src}
     <img src={src} alt="" loading="lazy" decoding="async" />
   {:else}
@@ -38,8 +39,8 @@
   {/if}
   {#if collected || excluded || unknown}
     <div class="library-marks">
-      {#if collected}<span title={unknown ? "上次已收录，本次待确认" : "外部作品库已收录"}>已收录</span>{/if}
-      {#if excluded}<span title="外部作品库已排除">已排除</span>{/if}
+      {#if collected}<span title={unknown ? "上次已在库，本次待确认" : "音声库中已有此作品"}>已在库</span>{/if}
+      {#if excluded}<span title="在音声库中标记为整部排除">已隐藏</span>{/if}
       {#if unknown && !collected}<span title="本次未能确认是否收录">待确认</span>{/if}
     </div>
   {/if}
@@ -87,6 +88,11 @@
     color: var(--muted);
     font-size: 10px;
     white-space: nowrap;
+  }
+
+  .private.marked .privacy-label {
+    align-self: flex-start;
+    margin-top: 5px;
   }
 
   .cover img {

@@ -1,4 +1,4 @@
-import type { Work } from "./api";
+import type { Profile, Work } from "./api";
 import { categoriesOf } from "./ui.ts";
 
 export type Credit = { id: string; name: string };
@@ -15,6 +15,11 @@ export function sameCredit(a: Credit, b: Credit): boolean {
 }
 export function hasCredit(work: Work, credit: Credit): boolean {
   return creditsOf(work).some((c) => sameCredit(c, credit));
+}
+
+export function dlsiteVoiceSearch(profile: Profile, name: string): string {
+  const site = profile === "all-age" ? "home" : "maniax";
+  return `https://www.dlsite.com/${site}/fsr/=/keyword_creater/${encodeURIComponent(`"${name}"`)}/work_type/SOU`;
 }
 export function actorDirectory<T extends Work>(works: T[]) {
   const map = new Map<string, { credit: Credit; count: number }>();

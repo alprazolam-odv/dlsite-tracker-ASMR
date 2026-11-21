@@ -9,7 +9,7 @@
     <span>声优：</span>
     {#each credits as credit (creditKey(credit))}
       {#if onvoice}
-        <button onclick={(event) => { event.stopPropagation(); onvoice?.(credit); }}
+        <button title={`查看声优「${credit.name}」的作品`} onclick={(event) => { event.stopPropagation(); onvoice?.(credit); }}
           ondblclick={(event) => event.stopPropagation()}>{credit.name}</button>
       {:else}<span>{credit.name}</span>{/if}
     {/each}

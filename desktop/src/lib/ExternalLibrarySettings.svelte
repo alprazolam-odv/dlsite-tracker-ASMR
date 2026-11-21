@@ -19,7 +19,7 @@
   <input id="external-library-url" type="text" inputmode="url" bind:value={address}
     autocomplete="off" spellcheck="false" placeholder="输入接口地址，留空关闭"
     aria-invalid={!!invalid} aria-describedby="library-help" oninput={() => (invalid = "")} />
-  <small id="library-help">保存后，启动时会向此地址查询当前模式的 RJ 编号。</small>
+  <small id="library-help">保存后会查询当前模式的 RJ 编号。可在列表上方切换显示已在库和已隐藏的作品。</small>
   {#if invalid}<small role="alert">{invalid}</small>{/if}
   <div class="buttons">
     <button class="btn" disabled={address === $externalLibrary.endpoint}>保存地址</button>
@@ -29,10 +29,6 @@
     {/if}
   </div>
   {#if $externalLibrary.endpoint}
-    <label><input type="checkbox" checked={$externalLibrary.hideCollected}
-      onchange={(e) => externalLibrary.setFilter("hideCollected", e.currentTarget.checked)} /> 隐藏已收录</label>
-    <label><input type="checkbox" checked={$externalLibrary.hideExcluded}
-      onchange={(e) => externalLibrary.setFilter("hideExcluded", e.currentTarget.checked)} /> 隐藏已排除</label>
     <small role="status">
       {#if $externalLibrary.syncing}正在查询作品库…
       {:else if $externalLibrary.syncedAt}上次同步 {new Date($externalLibrary.syncedAt).toLocaleString("zh-CN")}

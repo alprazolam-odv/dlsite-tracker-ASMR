@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { WorkView } from "$lib/api";
+  import type { Credit } from "$lib/audio";
   import type { TasteLevel } from "$lib/prefs.svelte";
   import { ICONS } from "$lib/ui";
   import {
@@ -21,6 +22,8 @@
     dismissedIds,
     onEditTaste,
     onopen,
+    onmaker,
+    onvoice,
     onhover,
     onleave,
     onseen,
@@ -34,6 +37,8 @@
     dismissedIds: Set<string>;
     onEditTaste: () => void;
     onopen?: (game: WorkView) => void;
+    onmaker: (game: WorkView) => void;
+    onvoice: (credit: Credit) => void;
     onhover?: (game: WorkView, event: MouseEvent) => void;
     onleave?: () => void;
     onseen?: (game: WorkView) => void;
@@ -194,6 +199,8 @@
         <div class="d-grid" role="list">
           {#each oldVisible as item (item.game.id)}
             <DiscoverCard
+              {onmaker}
+              {onvoice}
               {item}
               {onopen}
               {onhover}
@@ -219,6 +226,8 @@
         <div class="d-grid" role="list">
           {#each shown(section) as item (item.game.id)}
             <DiscoverCard
+              {onmaker}
+              {onvoice}
               {item}
               {onopen}
               {onhover}

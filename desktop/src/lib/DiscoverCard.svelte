@@ -2,12 +2,16 @@
   import { onDestroy } from "svelte";
   import type { WorkView } from "$lib/api";
   import Cover from "./Cover.svelte";
+  import VoiceLine from "./VoiceLine.svelte";
+  import type { Credit } from "./audio";
   import QuickFollowButton from "./QuickFollowButton.svelte";
   import type { DiscoveryItem } from "$lib/discovery";
 
   let {
     item,
     onopen,
+    onmaker,
+    onvoice,
     onhover,
     onleave,
     onseen,
@@ -16,6 +20,8 @@
   }: {
     item: DiscoveryItem;
     onopen?: (game: WorkView) => void;
+    onmaker: (game: WorkView) => void;
+    onvoice: (credit: Credit) => void;
     onhover?: (game: WorkView, event: MouseEvent) => void;
     onleave?: () => void;
     onseen?: (game: WorkView) => void;
@@ -72,6 +78,11 @@
     {#if seen}<span class="seen-badge">看过</span>{/if}
   </div>
   <div class="d-title">{item.game.title}</div>
+  {#if item.game.maker || item.game.maker_id}
+    <button class="maker" title="查看该社团的作品" ondblclick={(event) => event.stopPropagation()}
+      onclick={() => onmaker(item.game)}>{item.game.maker || item.game.maker_id}</button>
+  {/if}
+  <VoiceLine game={item.game} {onvoice} />
   <div class="d-note" title={item.note}>{item.note}</div>
   <QuickFollowButton work={item.game} />
 </div>
@@ -141,6 +152,25 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+
+  .maker {
+    align-self: flex-start;
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .maker:hover,
+  .maker:focus-visible { color: var(--accent); text-decoration: underline; }
 
   .d-note {
     font-size: 11px;

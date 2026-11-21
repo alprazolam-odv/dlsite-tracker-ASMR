@@ -1,10 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { actorDirectory, editionGroups, hasCredit, uniqueEditions, bedtimeReason, recentTaggedWorks } from "../src/lib/audio.ts";
+import { actorDirectory, dlsiteVoiceSearch, editionGroups, hasCredit, uniqueEditions, bedtimeReason, recentTaggedWorks } from "../src/lib/audio.ts";
 
 const actor = { id: "1", name: "Voice A" };
 const actor2 = { id: "2", name: "Voice B" };
 const work = (id, extra = {}) => ({ id, title: id, category: "耳语,助眠", voice_credits: [actor], ...extra });
+
+test("DLsite voice search uses the current storefront and encodes creator names as one segment", () => {
+  const name = "声優 / A&名前";
+  const keyword = encodeURIComponent(`"${name}"`);
+  assert.equal(dlsiteVoiceSearch("adult", name), `https://www.dlsite.com/maniax/fsr/=/keyword_creater/${keyword}/work_type/SOU`);
+  assert.equal(dlsiteVoiceSearch("all-age", name), `https://www.dlsite.com/home/fsr/=/keyword_creater/${keyword}/work_type/SOU`);
+});
 
 test("followed tags match any exact original category and show each recent release once", () => {
   const now = new Date(2026, 10, 21, 12).getTime();
