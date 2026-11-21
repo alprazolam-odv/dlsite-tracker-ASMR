@@ -24,7 +24,7 @@ export const DISCOVERY = {
   tasteMinScore: 2,
   /** 共现扩展阈值：P(B|A) ≥ 该值视为「近似口味」分类 */
   coocProbMin: 0.12,
-  /** 权重：命中口味分类 / 近似分类按概率 / 已关注作者 */
+  /** 权重：命中口味分类 / 近似分类按概率 / 已关注社团 */
   hitScore: 2,
   loveScore: 3,
   lessScore: -3,
@@ -52,7 +52,7 @@ export interface DiscoveryResult {
   old: DiscoveryItem[];
 }
 
-/** 口味上下文：口味集合 + 共现扩展（分类名 → 条件概率权重）+ 已关注作者 */
+/** 口味上下文：口味集合 + 共现扩展（分类名 → 条件概率权重）+ 已关注社团 */
 export interface TasteContext {
   taste: Set<string>;
   levels: Map<string, TasteLevel>;
@@ -121,7 +121,7 @@ export function buildTasteContext(
   return { taste, levels, expanded, followedMakers };
 }
 
-/** 作品口味得分：命中口味分类 ×2 + 近似分类按概率加权 + 已关注作者加分 */
+/** 作品口味得分：命中口味分类 ×2 + 近似分类按概率加权 + 已关注社团加分 */
 export function tasteScore(game: WorkView, ctx: TasteContext): number {
   if (ctx.taste.size === 0) return 0;
   let score = 0;
@@ -144,7 +144,7 @@ export function tasteScore(game: WorkView, ctx: TasteContext): number {
   return score;
 }
 
-/** 推荐理由：「含 X」/「近味 Y」/「已关注作者」 */
+/** 推荐理由：「含 X」/「近味 Y」/「已关注社团」 */
 export function tasteNote(game: WorkView, ctx: TasteContext): string {
   const loved: string[] = [];
   const hits: string[] = [];
@@ -159,7 +159,7 @@ export function tasteNote(game: WorkView, ctx: TasteContext): string {
   if (hits.length) parts.push(`含「${hits.slice(0, 3).join("」「")}」`);
   if (near.length) parts.push(`近味「${near.slice(0, 2).join("」「")}」`);
   if (parts.length === 0 && ctx.followedMakers.has(makerKeyOf(game.maker, game.maker_id))) {
-    parts.push("已关注作者");
+    parts.push("已关注社团");
   }
   return parts.join(" · ") || "与你口味相关";
 }

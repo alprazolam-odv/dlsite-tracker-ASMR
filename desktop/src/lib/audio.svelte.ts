@@ -35,12 +35,16 @@ class AudioStore {
     this.persist();
   }
   setLocalIds(ids: string[]) { this.data.localIds = [...new Set(ids)]; this.persist(); }
-  unread(works: Work[]) {
-    const seen = new Set(this.data.acknowledged);
-    return works.filter((w) => recent(w) && !seen.has(w.id) && this.data.following.some((c) => hasCredit(w, c)));
+  recentFollowed<T extends Work>(works: T[]): T[] {
+    return works.filter((work) =>
+      recent(work) && this.data.following.some((credit) => hasCredit(work, credit)));
   }
-  acknowledge(works: Work[]) {
-    this.data.acknowledged = [...new Set([...this.data.acknowledged, ...this.unread(works).map((w) => w.id)])].slice(-10000);
+  unread<T extends Work>(followedWorks: T[]): T[] {
+    const seen = new Set(this.data.acknowledged);
+    return followedWorks.filter((work) => !seen.has(work.id));
+  }
+  acknowledge(workIds: string[]) {
+    this.data.acknowledged = [...new Set([...this.data.acknowledged, ...workIds])].slice(-10000);
     this.persist();
   }
 }

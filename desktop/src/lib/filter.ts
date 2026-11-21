@@ -2,7 +2,7 @@
 import type { WorkView } from "./api";
 import { categoriesOf, compareRank, formsOf } from "./ui";
 
-/** 视图范围（对齐 macOS ViewFilter）：全部 / 某收藏夹 / 某制作者 */
+/** 视图范围（对齐 macOS ViewFilter）：全部 / 某收藏夹 / 某社团 */
 export type ViewFilter =
   | { kind: "all" }
   | { kind: "collection"; id: string }
@@ -15,7 +15,7 @@ export function viewFilterTitle(viewFilter: ViewFilter, collectionName: string):
     case "collection":
       return `收藏夹「${collectionName}」`;
     case "maker":
-      return `制作者「${viewFilter.name}」`;
+      return `社团「${viewFilter.name}」`;
   }
 }
 
@@ -110,7 +110,7 @@ export function activeFilterCount(f: FilterState): number {
   return count;
 }
 
-/** 作者键（与 macOS 版一致：优先 maker_id，否则 `n:名称`）。 */
+/** 社团键（与 macOS 版一致：优先 maker_id，否则 `n:名称`）。 */
 export function makerKeyOf(maker: string, makerId: string | null | undefined): string {  const id = makerId ?? "";
   return id ? id : `n:${maker}`;
 }

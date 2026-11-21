@@ -50,13 +50,13 @@
       <div class="title" title={game.title}>{game.title}</div>
       <button
         class="maker"
-        title="查看该作者的全部库内作品"
+        title="查看该社团的全部库内作品"
         onclick={(event) => {
           event.stopPropagation();
           onmaker?.();
         }}
         ondblclick={(event) => event.stopPropagation()}
-      >{game.maker || "制作者未知"}</button>
+      >{game.maker || "未知社团"}</button>
       <div class="category-slot">
         {#if categories.length > 0}
           <CategoryChips {categories} limit={5} maxRows={2} ontap={oncats} onmenu={oncatmenu} />

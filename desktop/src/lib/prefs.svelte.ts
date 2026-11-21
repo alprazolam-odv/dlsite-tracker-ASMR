@@ -22,8 +22,6 @@ export interface Prefs {
   sections: SectionsState;
   /** 筛选条件内的「更多筛选」展开状态 */
   filtersMore: boolean;
-  /** 「关注」分区内的作者列表展开状态 */
-  followedMakersExpanded: boolean;
   /** 发现系统：我的口味（分类名列表，手动勾选） */
   taste: string[];
   /** 发现系统：三档口味画像（旧 taste 自动迁移为 like）。 */
@@ -46,9 +44,8 @@ function defaults(): Prefs {
     showRatingCount: true,
     hideImages: false,
     sidebarVisible: true,
-    sections: { favorites: true, follows: false, genres: false, filters: true, imports: false },
+    sections: { favorites: true, follows: true, genres: false, filters: true, imports: false },
     filtersMore: false,
-    followedMakersExpanded: true,
     taste: [],
     tasteProfile: {},
     tasteCollectionIds: [],
@@ -67,7 +64,6 @@ function load(): Prefs {
         ? parsed.sections : {};
       const loaded = { ...base, ...parsed, sections: { ...base.sections, ...sections } };
       if (typeof loaded.hideImages !== "boolean") loaded.hideImages = false;
-      if (typeof loaded.followedMakersExpanded !== "boolean") loaded.followedMakersExpanded = true;
       if (!loaded.tasteProfile || typeof loaded.tasteProfile !== "object" || Array.isArray(loaded.tasteProfile)) {
         loaded.tasteProfile = {};
       }

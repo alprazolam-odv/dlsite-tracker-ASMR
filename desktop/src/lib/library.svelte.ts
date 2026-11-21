@@ -29,7 +29,7 @@ export interface DiscoveryHistory {
 }
 
 export interface FollowUpdateHistory {
-  /** 最近一次在本机作品库中检查关注作者新作的 Unix 毫秒时间戳。 */
+  /** 最近一次在本机作品库中检查关注社团新作的 Unix 毫秒时间戳。 */
   last_checked_at: number;
   /** 已经识别过的作品号，避免重复提醒。 */
   known_work_ids: string[];
@@ -218,7 +218,7 @@ class LibraryStore {
     return new Set(Object.keys(this.data.follow_updates.unread));
   }
 
-  /** 扫描当前作品库中的近两周关注作者新作；已知作品不会重复提醒。 */
+  /** 扫描当前作品库中的近两周关注社团新作；已知作品不会重复提醒。 */
   checkFollowUpdates(workIds: string[], force = false): number {
     const state = this.data.follow_updates;
     const now = Date.now();
