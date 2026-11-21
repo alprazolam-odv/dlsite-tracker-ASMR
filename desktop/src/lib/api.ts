@@ -117,6 +117,21 @@ export function startQualityNew(options: QualityNewOptions): Promise<string> {
   return invoke("start_quality_new", { options });
 }
 
+export interface HistoryRankingWork {
+  id: string;
+  rank: number;
+  url: string;
+  title: string;
+  maker: string;
+  released: string;
+  sales: number | null;
+}
+
+export async function loadHistoryRankings(year: number | null): Promise<HistoryRankingWork[]> {
+  const result = await invoke<string>("load_history_rankings", { year });
+  return JSON.parse(result).works;
+}
+
 export interface LoadedData {
   /** works.json 的绝对路径 */
   path: string;

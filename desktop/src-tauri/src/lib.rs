@@ -1,6 +1,6 @@
 // 同人游戏雷达 · Doujin Game Radar —— 桌面端后端命令
 // 职责：数据文件选择 / 记住最近使用的 works.json / 为封面图片登记资产协议读取范围。
-// 数据只在本机流转：所有命令都只读本地文件，不做任何网络访问。
+// 本地数据和偏好由应用管理，DLsite 网络请求由 Python 管道处理。
 
 use std::fs;
 use std::collections::BTreeSet;
@@ -842,6 +842,43 @@ fn start_quality_new(app: AppHandle, options: QualityNewOptions) -> Result<Strin
     Ok("已启动优质新作采集".into())
 }
 
+#[tauri::command]
+async fn load_history_rankings(app: AppHandle, year: Option<u32>) -> Result<String, String> {
+    let site = if current_profile(&app) == "all-age" { "home" } else { "maniax" };
+    let year_text = year.map(|number| number.to_string());
+    let mut args = vec!["history-rankings", "--site", site];
+    if let Some(ref value) = year_text {
+        args.extend(["--year", value]);
+    }
+
+    let mut command = if let Some(sidecar) = sidecar_path() {
+        embedded_command(&sidecar, &profile_dir(&app)?.join("pipeline"), &args)?
+    } else {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        if !is_repo_layout(&dir) {
+            return Err("未找到音声雷达数据管道。".into());
+        }
+        let config = project_dir_of(&app).ok().map(|path| path.join("config.ini"))
+            .filter(|path| path.is_file())
+            .unwrap_or_else(|| dir.join("config.example.ini"));
+        let config_path = config.to_str().ok_or("配置文件路径无法识别")?;
+        let mut full = vec!["-m", "dlsite_tracker", "--config", config_path];
+        full.extend(args);
+        #[cfg(windows)]
+        { python_command(&dir, &full)? }
+        #[cfg(not(windows))]
+        { let mut c = Command::new("python3"); c.args(full).current_dir(dir); c }
+    };
+    command.env("PYTHONIOENCODING", "utf-8");
+    let output = tauri::async_runtime::spawn_blocking(move || command.output())
+        .await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(stderr.lines().last().unwrap_or("读取榜单失败，请稍后重试。").to_string());
+    }
+    String::from_utf8(output.stdout).map_err(|_| "榜单编码无法解析。".into())
+}
+
 /// 本地同步导出（对齐 macOS 版「更新」：先跑管道导出，再重读文件）。
 /// 返回 "ok"（已导出）或 "no-export"（非管道目录布局，调用方直接重读即可）。
 #[tauri::command]
@@ -976,6 +1013,7 @@ pub fn run() {
             data_file_stamp,
             start_update,
             start_quality_new,
+            load_history_rankings,
             import_switch,
             cancel_import,
             start_genre_import,

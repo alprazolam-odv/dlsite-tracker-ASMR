@@ -29,6 +29,7 @@ from .discovery import (
 from .enrich import enrich_pending, PRODUCT_API_URL, parse_product
 from .audio import explicit_duration_seconds, workno as audio_workno
 from .quality_new import QualitySpec, run_quality_new
+from .history_rankings import fetch_history_rankings
 from .export import COVER_EXTENSIONS, export_current, export_snapshot
 from .http import Fetcher, HttpError, RobotsChanged
 from .progress import write_task_progress
@@ -524,6 +525,20 @@ def cmd_export(cfg: Config, args: argparse.Namespace) -> int:
         return 1
     finally:
         store.close()
+
+
+def cmd_history_rankings(cfg: Config, args: argparse.Namespace) -> int:
+    fetcher = Fetcher.from_config(cfg)
+    try:
+        fetcher.verify_robots()
+        result = fetch_history_rankings(fetcher, args.site, args.year)
+        print(json.dumps(result, ensure_ascii=False))
+        return 0
+    except (HttpError, RobotsChanged, ValueError) as exc:
+        LOG.error("读取历史佳作失败：%s", exc)
+        return 1
+    finally:
+        fetcher.close()
 
 
 def cmd_quality_new(cfg: Config, args: argparse.Namespace) -> int:
@@ -1332,6 +1347,10 @@ def build_parser() -> argparse.ArgumentParser:
     quality.add_argument("--max-works", type=int, default=0)
     export.add_argument("--work-types", default=None, help="逗号分隔的作品形式过滤（默认取配置 default_work_types）")
 
+    history = sub.add_parser("history-rankings", help="读取官方音声销量榜，不写入作品库")
+    history.add_argument("--site", choices=("maniax", "home"), required=True)
+    history.add_argument("--year", type=int, help="年度榜年份；省略时读取历代畅销")
+
     images = sub.add_parser("images", help="下载封面缩略图到 out/covers/")
     images.add_argument("--limit", type=int, default=None, help="本轮下载上限（默认取配置）")
     images.add_argument(
@@ -1406,6 +1425,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_audio_details(cfg, args)
     if args.command == "quality-new":
         return cmd_quality_new(cfg, args)
+    if args.command == "history-rankings":
+        return cmd_history_rankings(cfg, args)
     if args.command == "images":
         return cmd_images(cfg, args)
     if args.command == "serve":

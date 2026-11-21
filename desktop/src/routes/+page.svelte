@@ -33,6 +33,7 @@
   import PromptDialog from "$lib/PromptDialog.svelte";
   import YearPickerDialog from "$lib/YearPickerDialog.svelte";
   import QualityNewDialog from "$lib/QualityNewDialog.svelte";
+  import HistoryRankings from "$lib/HistoryRankings.svelte";
   import Sidebar from "$lib/Sidebar.svelte";
   import TasteEditor from "$lib/TasteEditor.svelte";
   import TagChip from "$lib/TagChip.svelte";
@@ -159,6 +160,7 @@
   let profileReady = $state(false);
   let profileSwitching = $state(false);
   let qualityDialog = $state(false);
+  let historyDialog = $state(false);
   let qualityOnly = $state(false);
   let errorMessage = $state("");
   let initializing = $state(false);
@@ -1379,6 +1381,12 @@
         >
           {@html ICONS.slider}个性化
         </button>
+        <div class="actions">
+          <button class="btn" disabled={status !== "ready" || (!qualityResult && (pipelineBusy || syncing))}
+            onclick={() => qualityResult ? showQualityResults() : (qualityDialog = true)}>优质新作</button>
+          <button class="btn" disabled={!profileReady || profileSwitching} aria-haspopup="dialog"
+            onclick={() => (historyDialog = true)}>历史佳作</button>
+        </div>
         <button class="btn with-icon" onclick={openUpdateMenu} disabled={status !== "ready" || pipelineBusy || syncing}>
           {@html ICONS.tray}开始更新数据 ▾
         </button>
@@ -1925,6 +1933,7 @@
 {#if qualityDialog}
   <QualityNewDialog {profile} onsubmit={runQuality} oncancel={() => (qualityDialog = false)} />
 {/if}
+<HistoryRankings open={historyDialog} {profile} onopen={openWork} onclose={() => (historyDialog = false)} />
 
 {#if yearDialog?.mode === "update"}
   <YearPickerDialog
