@@ -842,28 +842,20 @@ fn start_quality_new(app: AppHandle, options: QualityNewOptions) -> Result<Strin
     Ok("已启动优质新作采集".into())
 }
 
-#[tauri::command]
-async fn load_history_rankings(app: AppHandle, year: Option<u32>) -> Result<String, String> {
-    let site = if current_profile(&app) == "all-age" { "home" } else { "maniax" };
-    let year_text = year.map(|number| number.to_string());
-    let mut args = vec!["history-rankings", "--site", site];
-    if let Some(ref value) = year_text {
-        args.extend(["--year", value]);
-    }
-
+async fn read_dlsite_json(app: &AppHandle, args: &[&str]) -> Result<String, String> {
     let mut command = if let Some(sidecar) = sidecar_path() {
-        embedded_command(&sidecar, &profile_dir(&app)?.join("pipeline"), &args)?
+        embedded_command(&sidecar, &profile_dir(app)?.join("pipeline"), args)?
     } else {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         if !is_repo_layout(&dir) {
             return Err("未找到音声雷达数据管道。".into());
         }
-        let config = project_dir_of(&app).ok().map(|path| path.join("config.ini"))
+        let config = project_dir_of(app).ok().map(|path| path.join("config.ini"))
             .filter(|path| path.is_file())
             .unwrap_or_else(|| dir.join("config.example.ini"));
         let config_path = config.to_str().ok_or("配置文件路径无法识别")?;
         let mut full = vec!["-m", "dlsite_tracker", "--config", config_path];
-        full.extend(args);
+        full.extend_from_slice(args);
         #[cfg(windows)]
         { python_command(&dir, &full)? }
         #[cfg(not(windows))]
@@ -874,9 +866,38 @@ async fn load_history_rankings(app: AppHandle, year: Option<u32>) -> Result<Stri
         .await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(stderr.lines().last().unwrap_or("读取榜单失败，请稍后重试。").to_string());
+        return Err(stderr.lines().last().unwrap_or("读取 DLsite 数据失败，请稍后重试。").to_string());
     }
-    String::from_utf8(output.stdout).map_err(|_| "榜单编码无法解析。".into())
+    String::from_utf8(output.stdout).map_err(|_| "DLsite 数据编码无法解析。".into())
+}
+
+fn dlsite_site(app: &AppHandle) -> &'static str {
+    if current_profile(app) == "all-age" { "home" } else { "maniax" }
+}
+
+#[tauri::command]
+async fn load_history_rankings(app: AppHandle, year: Option<u32>) -> Result<String, String> {
+    let year_text = year.map(|number| number.to_string());
+    let mut args = vec!["history-rankings", "--site", dlsite_site(&app)];
+    if let Some(ref value) = year_text {
+        args.extend(["--year", value]);
+    }
+    read_dlsite_json(&app, &args).await
+}
+
+#[derive(Deserialize)]
+struct CatalogCreator {
+    kind: String,
+    name: String,
+    id: String,
+}
+
+#[tauri::command]
+async fn load_creator_works(app: AppHandle, creator: CatalogCreator, page: u32) -> Result<String, String> {
+    let name = format!("--name={}", creator.name);
+    let id = format!("--creator-id={}", creator.id);
+    let page = page.to_string();
+    read_dlsite_json(&app, &["creator-works", "--site", dlsite_site(&app), "--kind", &creator.kind, &name, &id, "--page", &page]).await
 }
 
 /// 本地同步导出（对齐 macOS 版「更新」：先跑管道导出，再重读文件）。
@@ -1014,6 +1035,7 @@ pub fn run() {
             start_update,
             start_quality_new,
             load_history_rankings,
+            load_creator_works,
             import_switch,
             cancel_import,
             start_genre_import,

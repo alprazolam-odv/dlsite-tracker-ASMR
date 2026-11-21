@@ -123,3 +123,28 @@ test("late responses cannot restore marks after changing or disabling an endpoin
   assert.equal(get(store).endpoint, "");
   assert.equal(get(store).marks.collected.size, 0);
 });
+
+test("online creator pages check new RJ IDs without changing Radar's saved marks", async () => {
+  const storage = memoryStorage();
+  const calls = [];
+  const store = createExternalLibrary(async (_url, ids) => {
+    calls.push(ids);
+    if (ids.length === catalog.length) return initial;
+    return { complete: false, collected: ["RJ5"], absent: ["RJ6"], excluded: ["RJ5"], unknown: ["RJ1"] };
+  }, () => storage);
+  store.useProfile("adult");
+  await store.setWorks(catalog);
+  await store.configure(endpoint);
+  const onlyOnline = [{ id: "RJ000005" }, { id: "RJ000006" }, catalog[0]];
+  const cached = storage.getItem("radar.externalLibrary.v1.adult");
+  const marks = await store.lookupPage(onlyOnline.map(work => work.id), new AbortController().signal);
+  assert.deepEqual(calls[1], ["RJ000005", "RJ000006", "RJ000001"]);
+  assert.deepEqual(marks.collected, new Set(["5", "1"]));
+  assert.deepEqual(marks.excluded, new Set(["5"]));
+  for (const flag of ["hideCollected", "hideExcluded"]) {
+    const visible = visibleLibraryWorks(onlyOnline, { ...get(store), marks, [flag]: true });
+    assert.ok(!visible.some(work => work.id === "RJ000005"));
+  }
+  assert.deepEqual(get(store).marks.collected, new Set(["1", "2"]));
+  assert.equal(storage.getItem("radar.externalLibrary.v1.adult"), cached);
+});

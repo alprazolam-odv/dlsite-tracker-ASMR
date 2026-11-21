@@ -16,7 +16,7 @@
 
   let {
     works, ageProfile = "adult", initialActor = null, followedWorks, unreadIds,
-    onactor, onopen, onclose, closeLabel = "返回作品浏览", onreload,
+    onactor, onmaker, onopen, onclose, closeLabel = "返回作品浏览", onreload,
   }: {
     works: WorkView[];
     ageProfile?: Profile;
@@ -24,6 +24,7 @@
     followedWorks?: WorkView[];
     unreadIds: ReadonlySet<string>;
     onactor?: (credit: Credit) => void;
+    onmaker?: (work: WorkView) => void;
     onopen: (url: string) => void;
     onclose?: () => void;
     closeLabel?: string;
@@ -288,7 +289,12 @@
         <Cover workId={work.id} src={work._cover} width={72} height={94} rounded />
         <div class="work-info">
           <button class="work-title" title={work.title} onclick={() => officialWork(work.id)}>{work.title}</button>
-          <div class="sub">{work.id} · {work.maker || "社团未知"} · {work.regist_date?.slice(0, 10) || "日期未知"}
+          <div class="sub">{work.id} ·
+            {#if onmaker && (work.maker || work.maker_id)}
+              <button class="maker-link" title="查看社团的 DLsite 音声作品"
+                onclick={() => onmaker?.(work)}>{work.maker || work.maker_id}</button>
+            {:else}{work.maker || "社团未知"}{/if}
+            · {work.regist_date?.slice(0, 10) || "日期未知"}
             {#if localIds.has(work.id)}<strong> · 本地已有</strong>{/if}
             {#if unreadIds.has(work.id)}<strong> · 未读新作</strong>{/if}
           </div>
@@ -334,6 +340,8 @@
 </div>
 
 <style>
+  .maker-link { background: none; border: 0; padding: 0; color: var(--text); font: inherit; }
+  .maker-link:hover, .maker-link:focus-visible { color: var(--accent); text-decoration: underline; }
   .audio-workspace { flex: 1; min-height: 0; overflow: auto; padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 12px; }
   .audio-workspace.embedded { flex: none; overflow: visible; padding: 0; }
   .workspace-title, .toolbar, .actor-search, .results-label { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-start; }

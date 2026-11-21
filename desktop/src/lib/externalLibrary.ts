@@ -2,9 +2,9 @@ import { writable } from "svelte/store";
 
 type Profile = "adult" | "all-age";
 type Lookup = (endpoint: string, ids: string[], signal: AbortSignal, snapshot?: string) => Promise<unknown>;
-type Marks = { collected: Set<string>; excluded: Set<string>; unknown: Set<string> };
+export type LibraryMarks = { collected: Set<string>; excluded: Set<string>; unknown: Set<string> };
 
-const emptyMarks = (): Marks => ({ collected: new Set(), excluded: new Set(), unknown: new Set() });
+const emptyMarks = (): LibraryMarks => ({ collected: new Set(), excluded: new Set(), unknown: new Set() });
 const defaults = () => ({
   endpoint: "", hideCollected: false, hideExcluded: false,
   marks: emptyMarks(), syncedAt: 0, partial: false, syncing: false, error: "", storageError: "",
@@ -195,7 +195,19 @@ export function createExternalLibrary(lookup: Lookup = fetchLookup, storage = ()
     update({ [name]: value });
     persist();
   }
-  return { subscribe: store.subscribe, useProfile, configure, setWorks, setFilter, refresh };
+
+  async function lookupPage(ids: string[], signal: AbortSignal): Promise<LibraryMarks> {
+    const { endpoint, marks: previous } = state;
+    const lookupIds = [...new Map(ids.filter(id => libraryKey(id)).map(id => [libraryKey(id), id])).values()];
+    if (!endpoint || !lookupIds.length) return emptyMarks();
+    const result = readBatch(await lookup(endpoint, lookupIds, signal), lookupIds);
+    for (const key of result.unknown) {
+      if (previous.collected.has(key)) result.collected.add(key);
+    }
+    return result;
+  }
+
+  return { subscribe: store.subscribe, useProfile, configure, setWorks, setFilter, refresh, lookupPage };
 }
 
 export const externalLibrary = createExternalLibrary();

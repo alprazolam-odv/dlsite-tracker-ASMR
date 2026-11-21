@@ -12,6 +12,7 @@
     dataFileStamp,
     getProfile, switchProfile, startQualityNew,
     type Profile, type QualityNewOptions,
+    type CatalogCreator,
     type LoadedData,
     type WorkView,
   } from "$lib/api";
@@ -46,6 +47,8 @@
   import CoverTile from "$lib/CoverTile.svelte";
   import Discover from "$lib/Discover.svelte";
   import ExternalLibrarySettings from "$lib/ExternalLibrarySettings.svelte";
+  import ExternalLibraryFilters from "$lib/ExternalLibraryFilters.svelte";
+  import CreatorCatalog from "$lib/CreatorCatalog.svelte";
   import { externalLibrary, visibleLibraryWorks } from "$lib/externalLibrary";
   import AudioWorkspace from "$lib/AudioWorkspace.svelte";
   import { setQuickFollow } from "$lib/QuickFollowButton.svelte";
@@ -163,6 +166,7 @@
   let profileSwitching = $state(false);
   let qualityDialog = $state(false);
   let historyDialog = $state(false);
+  let creatorCatalog = $state.raw<{ creator: CatalogCreator; openLocal: () => void } | null>(null);
   let qualityOnly = $state(false);
   let errorMessage = $state("");
   let initializing = $state(false);
@@ -427,7 +431,7 @@
       items.push({ label: `查看社团「${target.maker || target.maker_id}」作品`, action: () => showMaker(target) });
     }
     for (const credit of creditsOf(target)) {
-      items.push({ label: `查看声优「${credit.name}」作品`, action: () => openAudio(credit) });
+      items.push({ label: `查看声优「${credit.name}」作品`, action: () => showVoiceCatalog(credit) });
     }
     items.push({
       label: library.isFavorited(target.id) ? "移出我的收藏" : `加入「${DEFAULT_COLLECTION_NAME}」`,
@@ -1128,8 +1132,25 @@
   }
 
   function showMaker(work: WorkView) {
-    openMaker({ key: makerKeyOf(work.maker, work.maker_id), name: work.maker || work.maker_id || "未知社团",
+    if (!work.maker && !work.maker_id) return;
+    showCircleCatalog({ key: makerKeyOf(work.maker, work.maker_id), name: work.maker || work.maker_id || "未知社团",
       maker_id: work.maker_id ?? "" });
+  }
+
+  function showCircleCatalog(maker: FollowedMaker) {
+    hideHover();
+    creatorCatalog = {
+      creator: { kind: "circle", name: maker.name, id: maker.maker_id },
+      openLocal: () => openMaker(maker),
+    };
+  }
+
+  function showVoiceCatalog(credit: Credit) {
+    hideHover();
+    creatorCatalog = {
+      creator: { kind: "voice", ...credit },
+      openLocal: () => openAudio(credit),
+    };
   }
 
   function openMaker(maker: FollowedMaker) {
@@ -1455,21 +1476,7 @@
 
     {#if status === "ready" && ($externalLibrary.endpoint || mode === "browse")}
       <div class="catalog-tools">
-        {#if $externalLibrary.endpoint}
-          <div class="library-filters" role="group" aria-label="音声库作品筛选">
-            <span>音声库</span>
-            <label title="显示音声库中已有的作品">
-              <input type="checkbox" checked={!hideCollected}
-                onchange={(event) => externalLibrary.setFilter("hideCollected", !event.currentTarget.checked)} />
-              显示已在库
-            </label>
-            <label title="显示在音声库里标为整部排除的作品">
-              <input type="checkbox" checked={!hideExcluded}
-                onchange={(event) => externalLibrary.setFilter("hideExcluded", !event.currentTarget.checked)} />
-              显示已隐藏
-            </label>
-          </div>
-        {/if}
+        <ExternalLibraryFilters />
         {#if mode === "browse"}<button class="btn" onclick={() => openAudio()}>声优目录</button>{/if}
       </div>
     {/if}
@@ -1529,7 +1536,7 @@
         onEditTaste={() => (tasteEditorOpen = true)}
         onopen={(game) => openWork(game.url)}
         onmaker={showMaker}
-        onvoice={openAudio}
+        onvoice={showVoiceCatalog}
         onhover={enterHover}
         onleave={leaveHover}
         onseen={(game) => library.markSeen(game.id)}
@@ -1539,7 +1546,8 @@
     {#if mode === "audio" && status === "ready" && data}
       {#key audioSeed}
         <AudioWorkspace works={visibleWorks} ageProfile={profile} initialActor={audioActor}
-          unreadIds={unreadVoiceIds} onopen={openWork} onclose={() => (mode = audioReturnMode)}
+          unreadIds={unreadVoiceIds} onactor={showVoiceCatalog} onmaker={showMaker} onopen={openWork}
+          onclose={() => (mode = audioReturnMode)}
           closeLabel={`返回${pageNames[audioReturnMode]}`}
           onreload={() => reload({ quiet: true, keepScroll: true })} />
       {/key}
@@ -1565,13 +1573,13 @@
         onrefresh={() => void refreshFollowUpdates()}
         onmarkread={markCurrentFollowUpdatesRead}
         onopen={(work) => openWork(work.url)}
-        onmaker={openMaker}
-        onvoice={openAudio}
+        onmaker={showCircleCatalog}
+        onvoice={showVoiceCatalog}
         onfindvoices={() => openAudio()}
       >
         {#snippet voiceContent()}
           <AudioWorkspace works={visibleWorks} ageProfile={profile} followedWorks={voiceFollowedWorks}
-            unreadIds={unreadVoiceIds} onactor={openAudio}
+            unreadIds={unreadVoiceIds} onactor={showVoiceCatalog} onmaker={showMaker}
             onopen={openWork} onreload={() => reload({ quiet: true, keepScroll: true })} />
         {/snippet}
       </FollowUpdates>
@@ -1763,7 +1771,7 @@
                       onform={chipForm}
                       onbadge={chipBadge}
                       onmaker={() => showMaker(w)}
-                      onvoice={(credit) => openAudio(credit)}
+                      onvoice={showVoiceCatalog}
                       onopen={() => openWork(w.url)}
                     />
                   {:else if view === "compact"}
@@ -1775,7 +1783,7 @@
                       rankText={rankTextFor(w)}
                       onbadge={chipBadge}
                       onmaker={() => showMaker(w)}
-                      onvoice={(credit) => openAudio(credit)}
+                      onvoice={showVoiceCatalog}
                       onopen={() => openWork(w.url)}
                     />
                   {:else if view === "coverWall"}
@@ -1792,7 +1800,7 @@
                       onform={chipForm}
                       onbadge={chipBadge}
                       onmaker={() => showMaker(w)}
-                      onvoice={(credit) => openAudio(credit)}
+                      onvoice={showVoiceCatalog}
                       onopen={() => openWork(w.url)}
                     />
                   {/if}
@@ -1980,6 +1988,14 @@
   <QualityNewDialog {profile} onsubmit={runQuality} oncancel={() => (qualityDialog = false)} />
 {/if}
 <HistoryRankings open={historyDialog} {profile} onopen={openWork} onclose={() => (historyDialog = false)} />
+{#if creatorCatalog}
+  {@const catalog = creatorCatalog}
+  <CreatorCatalog creator={catalog.creator} {works} onopen={openWork}
+    onclose={() => (creatorCatalog = null)} onlocal={() => {
+      creatorCatalog = null;
+      catalog.openLocal();
+    }} />
+{/if}
 
 {#if yearDialog?.mode === "update"}
   <YearPickerDialog
@@ -2091,31 +2107,13 @@
     flex-wrap: wrap;
   }
 
-  .catalog-tools,
-  .library-filters {
+  .catalog-tools {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 6px 14px;
-  }
-
-  .catalog-tools {
     padding: 6px 16px;
     border-bottom: 1px solid var(--border);
-  }
-
-  .library-filters {
-    color: var(--muted);
-    font-size: 13px;
-  }
-
-  .library-filters label {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    min-height: 28px;
-    color: var(--text);
-    cursor: pointer;
   }
 
   .icon-btn {

@@ -132,6 +132,30 @@ export async function loadHistoryRankings(year: number | null): Promise<HistoryR
   return JSON.parse(result).works;
 }
 
+export interface CatalogCreator {
+  kind: "voice" | "circle";
+  name: string;
+  id: string;
+}
+
+export interface CreatorWork {
+  id: string;
+  title: string;
+  maker: string;
+  url: string;
+  cover: string;
+}
+
+export interface CreatorWorksPage {
+  works: CreatorWork[];
+  has_more: boolean;
+}
+
+export async function loadCreatorWorks(creator: CatalogCreator, page: number): Promise<CreatorWorksPage> {
+  const result = await invoke<string>("load_creator_works", { creator, page });
+  return JSON.parse(result);
+}
+
 export interface LoadedData {
   /** works.json 的绝对路径 */
   path: string;

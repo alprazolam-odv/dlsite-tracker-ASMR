@@ -13,6 +13,7 @@ import os
 import signal
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import List, Optional
 
@@ -30,8 +31,9 @@ from .enrich import enrich_pending, PRODUCT_API_URL, parse_product
 from .audio import explicit_duration_seconds, workno as audio_workno
 from .quality_new import QualitySpec, run_quality_new
 from .history_rankings import fetch_history_rankings
+from .creator_catalog import fetch_creator_page
 from .export import COVER_EXTENSIONS, export_current, export_snapshot
-from .http import Fetcher, HttpError, RobotsChanged
+from .http import REQUIRED_CRAWL_DELAY, Fetcher, HttpError, RobotsChanged
 from .progress import write_task_progress
 from .images import COVER_EXPORT_EVERY, download_covers
 from .importer import (
@@ -536,6 +538,20 @@ def cmd_history_rankings(cfg: Config, args: argparse.Namespace) -> int:
         return 0
     except (HttpError, RobotsChanged, ValueError) as exc:
         LOG.error("读取历史佳作失败：%s", exc)
+        return 1
+    finally:
+        fetcher.close()
+
+
+def cmd_creator_works(cfg: Config, args: argparse.Namespace) -> int:
+    fetcher = Fetcher.from_config(replace(cfg, page_delay=max(REQUIRED_CRAWL_DELAY, cfg.page_delay)))
+    try:
+        fetcher.verify_robots()
+        result = fetch_creator_page(fetcher, args.site, args.kind, args.name, args.creator_id, args.page)
+        print(json.dumps(result))
+        return 0
+    except (HttpError, RobotsChanged, ValueError) as exc:
+        LOG.error("读取 DLsite 作品目录失败：%s", exc)
         return 1
     finally:
         fetcher.close()
@@ -1351,6 +1367,13 @@ def build_parser() -> argparse.ArgumentParser:
     history.add_argument("--site", choices=("maniax", "home"), required=True)
     history.add_argument("--year", type=int, help="年度榜年份；省略时读取历代畅销")
 
+    creator = sub.add_parser("creator-works", help="读取声优或社团的官方音声目录，不写入作品库")
+    creator.add_argument("--site", choices=("maniax", "home"), required=True)
+    creator.add_argument("--kind", choices=("voice", "circle"), required=True)
+    creator.add_argument("--name", required=True)
+    creator.add_argument("--creator-id", default="")
+    creator.add_argument("--page", type=int, default=1)
+
     images = sub.add_parser("images", help="下载封面缩略图到 out/covers/")
     images.add_argument("--limit", type=int, default=None, help="本轮下载上限（默认取配置）")
     images.add_argument(
@@ -1385,7 +1408,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not args.command:
         parser.print_help()
         return 0
-    if args.command == "history-rankings":
+    if args.command in ("history-rankings", "creator-works"):
         # 打包的 Windows 管道可能用系统代码页，桌面端读取 UTF-8 错误信息。
         sys.stderr.reconfigure(encoding="utf-8")
     logging.basicConfig(
@@ -1430,6 +1453,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_quality_new(cfg, args)
     if args.command == "history-rankings":
         return cmd_history_rankings(cfg, args)
+    if args.command == "creator-works":
+        return cmd_creator_works(cfg, args)
     if args.command == "images":
         return cmd_images(cfg, args)
     if args.command == "serve":

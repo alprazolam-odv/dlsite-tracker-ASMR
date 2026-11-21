@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ICONS } from "$lib/ui";
-  import { externalLibrary, libraryKey } from "./externalLibrary";
+  import { externalLibrary, libraryKey, type LibraryMarks } from "./externalLibrary";
   import { prefs } from "$lib/prefs.svelte";
 
   let {
@@ -9,18 +9,21 @@
     width,
     height,
     rounded = false,
+    libraryMarks,
   }: {
     src?: string;
     workId: string;
     width?: number | string;
     height?: number | string;
     rounded?: boolean;
+    libraryMarks?: LibraryMarks;
   } = $props();
 
   const key = $derived(libraryKey(workId));
-  const collected = $derived($externalLibrary.marks.collected.has(key));
-  const excluded = $derived($externalLibrary.marks.excluded.has(key));
-  const unknown = $derived($externalLibrary.marks.unknown.has(key));
+  const marks = $derived(libraryMarks ?? $externalLibrary.marks);
+  const collected = $derived(marks.collected.has(key));
+  const excluded = $derived(marks.excluded.has(key));
+  const unknown = $derived(marks.unknown.has(key));
 
   const style = $derived(
     `${width !== undefined ? `width:${typeof width === "number" ? `${width}px` : width};` : ""}` +
