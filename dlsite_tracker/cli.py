@@ -532,7 +532,7 @@ def cmd_history_rankings(cfg: Config, args: argparse.Namespace) -> int:
     try:
         fetcher.verify_robots()
         result = fetch_history_rankings(fetcher, args.site, args.year)
-        print(json.dumps(result, ensure_ascii=False))
+        print(json.dumps(result))
         return 0
     except (HttpError, RobotsChanged, ValueError) as exc:
         LOG.error("读取历史佳作失败：%s", exc)
@@ -1385,6 +1385,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not args.command:
         parser.print_help()
         return 0
+    if args.command == "history-rankings":
+        # 打包的 Windows 管道可能用系统代码页，桌面端读取 UTF-8 错误信息。
+        sys.stderr.reconfigure(encoding="utf-8")
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"
     )
