@@ -2,6 +2,7 @@
   import { onDestroy } from "svelte";
   import type { WorkView } from "$lib/api";
   import Cover from "./Cover.svelte";
+  import QuickFollowButton from "./QuickFollowButton.svelte";
   import type { DiscoveryItem } from "$lib/discovery";
 
   let {
@@ -72,6 +73,7 @@
   </div>
   <div class="d-title">{item.game.title}</div>
   <div class="d-note" title={item.note}>{item.note}</div>
+  <QuickFollowButton work={item.game} />
 </div>
 
 <style>

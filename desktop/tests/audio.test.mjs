@@ -1,10 +1,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { actorDirectory, editionGroups, hasCredit, uniqueEditions, bedtimeReason } from "../src/lib/audio.ts";
+import { actorDirectory, editionGroups, hasCredit, uniqueEditions, bedtimeReason, recentTaggedWorks } from "../src/lib/audio.ts";
 
 const actor = { id: "1", name: "Voice A" };
 const actor2 = { id: "2", name: "Voice B" };
 const work = (id, extra = {}) => ({ id, title: id, category: "耳语,助眠", voice_credits: [actor], ...extra });
+
+test("followed tags match any exact original category and show each recent release once", () => {
+  const now = new Date(2026, 10, 21, 12).getTime();
+  const release = (id, regist_date, category) => work(id, { regist_date, category });
+  const items = [
+    release("within", "2026-11-08", "剧情、旧友"),
+    release("multiple", "2026-11-21", " 剧情 | 旧友 | 剧情 "),
+    release("partial", "2026-11-20", "老友与旧友"),
+    release("expired", "2026-11-07", "剧情"),
+    release("future", "2026-11-22", "旧友"),
+    release("absent", "2026-11-21", ""),
+  ];
+  assert.deepEqual(recentTaggedWorks(items, ["旧友", "剧情"], now).map(w => w.id), ["multiple", "within"]);
+  assert.deepEqual(recentTaggedWorks(items, [], now), []);
+});
 
 test("actor directory and intersecting official credits", () => {
   const entries = [work("RJ100000"), work("RJ100001", { voice_credits: [actor, actor2] }), work("RJ100002", { voice_actors: "Voice A", voice_credits: [] })];

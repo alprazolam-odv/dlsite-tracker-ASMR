@@ -8,6 +8,7 @@
   import GameMetaFlow from "./GameMetaFlow.svelte";
   import GamePrice from "./GamePrice.svelte";
   import HeartButton from "./HeartButton.svelte";
+  import QuickFollowButton from "./QuickFollowButton.svelte";
   import VoiceLine from "./VoiceLine.svelte";
   import type { Credit } from "./audio";
 
@@ -80,6 +81,7 @@
   <div class="bottom">
     <GamePrice {game} {showDiscount} size="sm" />
     <span class="spacer"></span>
+    <QuickFollowButton work={game} />
     <HeartButton id={game.id} />
     <button
       class="open"

@@ -69,8 +69,8 @@ export function heatText(game: WorkView): string | null {
 }
 
 /** 分类拆分（对齐 macOS Game.parts：按 | ; ； 、 ， , 拆分） */
-export function categoriesOf(game: WorkView): string[] {
-  return splitParts(game.category);
+export function categoriesOf(game: Pick<WorkView, "category">): string[] {
+  return [...new Set(splitParts(game.category))];
 }
 
 /** 作品形式（我们的导出为单值，兼容多值分隔） */

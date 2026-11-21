@@ -5,7 +5,6 @@
   import type { FilterState, ViewFilter } from "$lib/filter";
   import { activeFilterCount, yearOf } from "$lib/filter";
   import type { FavoriteCollection } from "$lib/library.svelte";
-  import type { FollowTab } from "./FollowUpdates.svelte";
   import type { GenreProgress, ImportProgress } from "$lib/pipeline";
   import { yearsLabel } from "$lib/pipeline";
   import { prefs } from "$lib/prefs.svelte";
@@ -39,9 +38,7 @@
     onClearFilters,
     onImportToggle,
     onCancelImport,
-    followTab = null,
-    voiceUnread = 0,
-    circleUnread = 0,
+    followingActive = false,
     followUpdatesUnread = 0,
     onOpenFollowUpdates,
     onOpenBrowse,
@@ -66,11 +63,9 @@
     onClearFilters: () => void;
     onImportToggle: (on: boolean) => void;
     onCancelImport: () => void;
-    followTab?: FollowTab | null;
-    voiceUnread?: number;
-    circleUnread?: number;
+    followingActive?: boolean;
     followUpdatesUnread?: number;
-    onOpenFollowUpdates: (tab: FollowTab) => void;
+    onOpenFollowUpdates: () => void;
     onOpenBrowse: () => void;
   } = $props();
 
@@ -266,7 +261,7 @@
       icon={ICONS.gridAll}
       title="全部作品"
       count={works.length}
-      selected={!followTab && viewFilter.kind === "all"}
+      selected={!followingActive && viewFilter.kind === "all"}
       onclick={() => {
         onOpenBrowse();
         viewFilter = { kind: "all" };
@@ -298,7 +293,7 @@
             icon={ICONS.folder}
             title={collection.name}
             count={collection.work_ids.length}
-            selected={!followTab && viewFilter.kind === "collection" && viewFilter.id === collection.id}
+            selected={!followingActive && viewFilter.kind === "collection" && viewFilter.id === collection.id}
             onclick={() => {
               onOpenBrowse();
               viewFilter = { kind: "collection", id: collection.id };
@@ -320,39 +315,12 @@
   </section>
 
   <section class="card flat">
-    <button
-      class="section-head"
-      title={prefs.data.sections.follows ? "收起「我的关注」" : "展开「我的关注」"}
-      aria-expanded={prefs.data.sections.follows}
-      onclick={() => prefs.toggleSection("follows", !prefs.data.sections.follows)}
-    >
-      <span class="chev" class:open={prefs.data.sections.follows}>{@html ICONS.chevronRight}</span>
-      <span class="bar"></span>
+    <button class="section-head" class:following-active={followingActive} aria-pressed={followingActive} onclick={onOpenFollowUpdates}>
       <span class="sec-icon">{@html ICONS.personCircle}</span>
       <span class="title">我的关注</span>
       <span class="spacer"></span>
-      {#if !prefs.data.sections.follows && followUpdatesUnread > 0}
-        <span class="follow-unread">{followUpdatesUnread} 部未读</span>
-      {/if}
+      {#if followUpdatesUnread > 0}<span class="follow-unread">{followUpdatesUnread} 部未读</span>{/if}
     </button>
-    {#if prefs.data.sections.follows}
-      <div class="section-body" transition:slide={{ duration: SECTION_DURATION }}>
-        <NavRow
-          icon={ICONS.personCircle}
-          title="声优新作"
-          count={voiceUnread || null}
-          selected={followTab === "voice"}
-          onclick={() => onOpenFollowUpdates("voice")}
-        />
-        <NavRow
-          icon={ICONS.flame}
-          title="社团新作"
-          count={circleUnread || null}
-          selected={followTab === "circle"}
-          onclick={() => onOpenFollowUpdates("circle")}
-        />
-      </div>
-    {/if}
   </section>
 
   <section class="card">
@@ -779,6 +747,7 @@
     white-space: nowrap;
   }
 
+  .section-head.following-active { color: var(--accent); }
   .follow-unread {
     flex: none;
     border-radius: 999px;

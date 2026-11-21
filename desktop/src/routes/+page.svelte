@@ -48,8 +48,10 @@
   import ExternalLibrarySettings from "$lib/ExternalLibrarySettings.svelte";
   import { externalLibrary, visibleLibraryWorks } from "$lib/externalLibrary";
   import AudioWorkspace from "$lib/AudioWorkspace.svelte";
+  import { setQuickFollow } from "$lib/QuickFollowButton.svelte";
+  import QuickFollowDialog from "$lib/QuickFollowDialog.svelte";
   import { audioLibrary } from "$lib/audio.svelte";
-  import { uniqueEditions, type Credit } from "$lib/audio";
+  import { recentTaggedWorks, uniqueEditions, type Credit } from "$lib/audio";
   import FollowUpdates, { type FollowTab } from "$lib/FollowUpdates.svelte";
   import LargeRow from "$lib/LargeRow.svelte";
   import MediumCard from "$lib/MediumCard.svelte";
@@ -179,6 +181,8 @@
   let audioActor = $state<Credit | null>(null);
   let audioFromFollow = $state(false);
   let audioSeed = $state(0);
+  let quickFollowWork = $state.raw<WorkView | null>(null);
+  setQuickFollow((work) => { hideHover(); quickFollowWork = work; });
   let discoverReturnMode = $state<"browse" | "followUpdates">("browse");
   let followTab = $state<FollowTab>("voice");
   let followUpdatesVisited = $state(false);
@@ -240,6 +244,8 @@
   const voiceFollowedWorks = $derived(audioLibrary.recentFollowed(visibleWorks));
   const unreadVoiceWorks = $derived(audioLibrary.unread(voiceFollowedWorks));
   const unreadVoiceIds = $derived(new Set(unreadVoiceWorks.map((work) => work.id)));
+  const tagWorks = $derived(recentTaggedWorks(visibleWorks, audioLibrary.data.followedTags));
+  const unreadTagIds = $derived(new Set(audioLibrary.unread(tagWorks, "tag").map((work) => work.id)));
   const discoveryWorks = $derived(uniqueEditions(visibleWorks));
 
   /** 测量用「最宽内容」卡片：长标题 + 最长 9 个分类 + 三形式 + 全徽章 + 全数据行 + 折扣价 */
@@ -303,12 +309,15 @@
   );
   const followUpdatesUnread = $derived(new Set([
     ...unreadVoiceIds,
+    ...unreadTagIds,
     ...unreadFollowUpdates.map((work) => work.id),
   ]).size);
   const seenIds = $derived(library.seenIds());
   const dismissedIds = $derived(library.dismissedIds());
   const genres = $derived(data?.file.genres ?? []);
   const genreCatalog = $derived(data?.file.genre_catalog ?? []);
+  const tagOptions = $derived([...new Set([...genreCatalog.map((entry) => entry.name), ...works.flatMap(categoriesOf)])]
+    .sort((a, b) => a.localeCompare(b, "zh-Hans-CN")));
   const activeGenre = $derived(genres.find((entry) => entry.id === filter.genreFocus) ?? null);
 
   const cfg = $derived(VIEWS[view]);
@@ -513,9 +522,12 @@
     const menu = categoryMenu;
     if (!menu) return [];
     const candidates = matchingGenreCandidates(menu.name, genreCatalog, genres);
-    const items: { label: string; action: () => void; disabled?: boolean; divider?: boolean }[] = [];
+    const items: { label: string; action: () => void; disabled?: boolean; divider?: boolean }[] = [{
+      label: audioLibrary.data.followedTags.includes(menu.name) ? `取消追踪标签「${menu.name}」` : `追踪标签「${menu.name}」`,
+      action: () => audioLibrary.toggleTag(menu.name),
+    }];
     if (candidates.length === 0) {
-      return [{ label: "官方人气榜目录未找到此分类", action: () => {}, disabled: true }];
+      return items;
     }
     if (candidates.length > 1 && !menu.selectedId) {
       items.push({ label: "请选择对应的官方分类 ID", action: () => {}, disabled: true });
@@ -1212,9 +1224,11 @@
     filter = emptyFilter();
   }
 
-  function openFollowUpdates(next?: FollowTab) {
-    if (next) followTab = next;
-    else if (!followUpdatesVisited && !unreadVoiceWorks.length && unreadFollowUpdates.length) followTab = "circle";
+  function openFollowUpdates() {
+    if (!followUpdatesVisited && !unreadVoiceWorks.length) {
+      if (unreadFollowUpdates.length) followTab = "circle";
+      else if (unreadTagIds.size) followTab = "tag";
+    }
     hideHover();
     followUpdatesVisited = true;
     returnToFollowUpdates = false;
@@ -1223,6 +1237,7 @@
 
   function markCurrentFollowUpdatesRead() {
     if (followTab === "voice") audioLibrary.acknowledge([...unreadVoiceIds]);
+    else if (followTab === "tag") audioLibrary.acknowledge([...unreadTagIds], "tag");
     else library.markFollowUpdatesRead(unreadFollowUpdates.map((work) => work.id));
   }
 
@@ -1278,7 +1293,7 @@
 <div class="app">
   {#if prefs.data.sidebarVisible}
     <Sidebar
-      active={mode === "browse" || mode === "followUpdates"}
+      active={mode === "browse" || mode === "followUpdates" || mode === "audio"}
       bind:filter
       bind:viewFilter
       bind:importYears
@@ -1301,9 +1316,7 @@
       onClearFilters={clearAllFilters}
       onImportToggle={(on) => void handleImportToggle(on)}
       onCancelImport={() => void cancelImport().then(() => pollProgress())}
-      followTab={mode === "followUpdates" ? followTab : null}
-      voiceUnread={unreadVoiceWorks.length}
-      circleUnread={unreadFollowUpdates.length}
+      followingActive={mode === "followUpdates" || (mode === "audio" && audioFromFollow)}
       {followUpdatesUnread}
       onOpenFollowUpdates={openFollowUpdates}
       onOpenBrowse={() => {
@@ -1367,10 +1380,6 @@
             {#if followUpdatesUnread > 0}<span class="follow-count">{followUpdatesUnread} 部未读</span>{/if}
           </button>
         {/if}
-        <button class="btn" class:active={mode === "audio"} disabled={status !== "ready"}
-          onclick={() => mode === "audio" ? closeAudio() : openAudio()}>
-          音声工作台
-        </button>
         <button
           class="btn with-icon personalization-trigger"
           class:active={showPersonalization}
@@ -1507,7 +1516,6 @@
         active={mode === "followUpdates"}
         resetScrollToken={manualRefreshCount}
         bind:tab={followTab}
-        showTabs={!prefs.data.sidebarVisible}
         voices={audioLibrary.data.following}
         makers={library.data.makers}
         voiceWorkCount={voiceFollowedWorks.length}
@@ -1515,6 +1523,9 @@
         circleWorks={visibleFollowedWorks}
         circleUnreadIds={unreadFollowUpdateIds}
         circleUnread={unreadFollowUpdates.length}
+        {tagWorks}
+        {tagOptions}
+        {unreadTagIds}
         lastCheckedAt={library.data.follow_updates.last_checked_at}
         refreshing={syncing || pipelineBusy}
         onclose={() => (mode = "browse")}
@@ -1524,8 +1535,6 @@
         onmaker={openMakerFromFollowUpdates}
         onvoice={(credit) => openAudio(credit, true)}
         onfindvoices={() => openAudio(null, true)}
-        onremovevoice={(credit) => audioLibrary.toggle(credit)}
-        onremovemaker={(maker) => library.toggleFollow(maker.key, maker.name, maker.maker_id)}
       >
         {#snippet voiceContent()}
           <AudioWorkspace works={visibleWorks} ageProfile={profile} followedWorks={voiceFollowedWorks}
@@ -1542,7 +1551,7 @@
         <span class="strip-count">· 命中 {filtered.length} 部</span>
         <span class="spacer"></span>
         {#if returnToFollowUpdates}
-          <button class="link" onclick={() => openFollowUpdates("circle")}>返回社团新作</button>
+          <button class="link" onclick={() => openFollowUpdates()}>返回我的关注</button>
         {/if}
         {#if activeMaker}
           {#if activeMaker.makerId}
@@ -1837,6 +1846,9 @@
   <HoverPanel game={hoverWork} x={hoverX} y={hoverY} {genres} />
 {/if}
 
+{#if quickFollowWork}
+  <QuickFollowDialog work={quickFollowWork} onclose={() => (quickFollowWork = null)} />
+{/if}
 {#if tasteEditorOpen}
   <TasteEditor
     works={data?.works ?? []}
