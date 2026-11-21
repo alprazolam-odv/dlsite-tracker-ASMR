@@ -181,9 +181,7 @@ def enrich_one(
         store.add_excluded(workno, row.get("work_type"))
         store.finish_pending(workno)
         return row
-    store.upsert_work(row)
-    store.replace_genres(workno, genres)
-    store.finish_pending(workno)
+    store.save_enriched_work(workno, row, genres)
     return row
 
 

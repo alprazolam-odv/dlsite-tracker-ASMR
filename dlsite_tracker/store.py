@@ -589,6 +589,16 @@ class Store:
 
     # ---- works --------------------------------------------------------
     def upsert_work(self, row: Dict[str, Any]) -> None:
+        with self.conn:
+            self._upsert_work(row)
+
+    def save_enriched_work(self, workno: str, row: Dict[str, Any], genres: Sequence[Dict[str, str]]) -> None:
+        with self.conn:
+            self._upsert_work(row)
+            self._replace_genres(workno, genres)
+            self.conn.execute("DELETE FROM pending WHERE workno=?", (workno,))
+
+    def _upsert_work(self, row: Dict[str, Any]) -> None:
         row = dict(row)
         row["enriched_at"] = _now()
         row.setdefault("updated_at", _now())
@@ -599,16 +609,18 @@ class Store:
             f"INSERT INTO works({','.join(columns)}) VALUES({placeholders}) "
             f"ON CONFLICT(workno) DO UPDATE SET {updates}"
         )
-        with self.conn:
-            self.conn.execute(sql, [row[name] for name in columns])
+        self.conn.execute(sql, [row[name] for name in columns])
 
     def replace_genres(self, workno: str, genres: Sequence[Dict[str, str]]) -> None:
         with self.conn:
-            self.conn.execute("DELETE FROM work_genres WHERE workno=?", (workno,))
-            self.conn.executemany(
-                "INSERT OR REPLACE INTO work_genres(workno,genre_id,name) VALUES(?,?,?)",
-                [(workno, genre["id"], genre["name"]) for genre in genres],
-            )
+            self._replace_genres(workno, genres)
+
+    def _replace_genres(self, workno: str, genres: Sequence[Dict[str, str]]) -> None:
+        self.conn.execute("DELETE FROM work_genres WHERE workno=?", (workno,))
+        self.conn.executemany(
+            "INSERT OR REPLACE INTO work_genres(workno,genre_id,name) VALUES(?,?,?)",
+            [(workno, genre["id"], genre["name"]) for genre in genres],
+        )
 
     # ---- 分类人气名次（P19）-----------------------------------------------
     def save_genre_info(self, genre_id: str, name: str, count: Optional[int]) -> None:

@@ -1,5 +1,6 @@
 // 管道任务：启动更新与进度轮询（对齐 out/update-progress.json 与 out/import-progress.json）。
 import { invoke } from "@tauri-apps/api/core";
+import type { Credit } from "./audio";
 
 export interface UpdateState {
   schema_version?: number;
@@ -61,6 +62,18 @@ interface ProgressFiles {
   import_progress: string | null;
   genre: string | null;
   import_coverage: string | null;
+  voice_sync: string | null;
+}
+
+export function saveFollowedVoices(voices: Credit[]): Promise<void> {
+  return invoke("save_followed_voices", { voices });
+}
+
+export async function syncFollowedVoices(check: boolean): Promise<{
+  status: "ok" | "busy" | "unavailable";
+  message?: string;
+}> {
+  return JSON.parse(await invoke<string>("sync_followed_voices", { check }));
 }
 
 /** 运行中的阶段（与 macOS 版横幅一致）。 */
@@ -269,6 +282,7 @@ export async function readProgress(): Promise<{
   importProgress: ImportProgress | null;
   genreProgress: GenreProgress | null;
   importCoverage: ImportCoverage | null;
+  voiceSync: UpdateState | null;
 }> {
   const files = await invoke<ProgressFiles>("read_progress_files");
   const parse = <T>(raw: string | null): T | null => {
@@ -285,5 +299,6 @@ export async function readProgress(): Promise<{
     importProgress: parse<ImportProgress>(files.import_progress),
     genreProgress: parse<GenreProgress>(files.genre),
     importCoverage: parse<ImportCoverage>(files.import_coverage),
+    voiceSync: parse<UpdateState>(files.voice_sync),
   };
 }

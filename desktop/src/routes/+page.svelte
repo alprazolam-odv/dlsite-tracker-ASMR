@@ -79,6 +79,7 @@
     type ImportCoverage,
     type ImportProgress,
     type UpdateState,
+    saveFollowedVoices, syncFollowedVoices,
   } from "$lib/pipeline";
 
   type Status = "empty" | "loading" | "ready" | "error";
@@ -173,6 +174,15 @@
   let initProgressObserved = false;
   let data = $state<LoadedData | null>(null);
   let syncing = $state(false);
+  let voiceSyncing = $state(false);
+  let voiceSyncDetail = $state("");
+  let voiceSyncMessage = $state("");
+  let savedVoices = $state("");
+  let queuedVoices = "";
+  let autoVoiceSync = "";
+  let voiceRetry = $state(0);
+  let voiceCheckQueued = $state(false);
+  let voiceSave = Promise.resolve();
   let updateStarting = $state(false);
   let updateLaunchToken = 0;
   let lastError = $state("");
@@ -527,7 +537,35 @@
   });
 
   const genreJobActive = $derived(genreInfo?.running === true);
-  const pipelineBusy = $derived(initializing || updateStarting || isRunning(progress) || genreJobActive);
+  const pipelineBusy = $derived(initializing || updateStarting || voiceSyncing || isRunning(progress) || genreJobActive);
+  const followedVoiceSelection = $derived.by(() => {
+    if (!profileReady || status !== "ready" || !data) return null;
+    const voices = audioLibrary.data.following.map(({ id, name }) => ({ id: id ?? "", name }));
+    return { voices, key: JSON.stringify([data.path, voices]) };
+  });
+
+  $effect(() => {
+    const selection = followedVoiceSelection;
+    if (!selection || selection.key === queuedVoices) return;
+    queuedVoices = selection.key;
+    autoVoiceSync = "";
+    // Serialize writes while the import process reads this list between requests.
+    voiceSave = voiceSave.then(async () => {
+      await saveFollowedVoices(selection.voices);
+      savedVoices = selection.key;
+    }).catch(error => { voiceSyncMessage = `无法保存声优关注清单：${String(error)}`; });
+  });
+
+  $effect(() => {
+    const selection = followedVoiceSelection;
+    void voiceRetry;
+    if (!progressReady || pipelineBusy || syncing || profileSwitching || !selection?.voices.length
+      || selection.key !== savedVoices || (!voiceCheckQueued && selection.key === autoVoiceSync)) return;
+    const check = voiceCheckQueued;
+    voiceCheckQueued = false;
+    autoVoiceSync = selection.key;
+    void untrack(() => runVoiceSync(check));
+  });
   const categoryImportBusy = $derived(pipelineBusy || syncing || importInfo?.running === true || pendingCategoryImport !== null || genrePreferenceSaving);
   const categoryMenuItems = $derived.by(() => {
     const menu = categoryMenu;
@@ -908,6 +946,9 @@
         void reload({ quiet: true, keepScroll: true });
       }
       const next = await readProgress();
+      if (next.voiceSync?.phase === "import" || next.voiceSync?.phase === "waiting") {
+        voiceSyncDetail = next.voiceSync.detail ?? "";
+      }
       progressReady = true;
       dailyStatus = next.dailyStatus;
       const state = next.state;
@@ -1146,6 +1187,10 @@
   }
 
   function showVoiceCatalog(credit: Credit) {
+    if (audioLibrary.isFollowing(credit)) {
+      openAudio(credit);
+      return;
+    }
     hideHover();
     creatorCatalog = {
       creator: { kind: "voice", ...credit },
@@ -1303,8 +1348,40 @@
   }
 
   async function refreshFollowUpdates() {
+    if (followTab === "voice") {
+      if (audioLibrary.data.following.length) await runVoiceSync(true);
+      return;
+    }
     library.checkFollowUpdates(recentFollowedWorks.map((work) => work.id), true);
     await runUpdate("quick");
+  }
+
+  async function runVoiceSync(check: boolean) {
+    if (pipelineBusy || syncing) return;
+    voiceSyncing = true;
+    voiceSyncMessage = "";
+    voiceSyncDetail = check ? "正在检查关注声优的新作…" : "正在准备补齐关注声优的作品…";
+    try {
+      await voiceSave;
+      if (followedVoiceSelection?.key !== savedVoices) throw new Error("无法读取当前的声优关注清单");
+      const result = await syncFollowedVoices(check);
+      if (result.status === "busy") {
+        voiceSyncMessage = "作品库正在更新，关注声优同步等待中。";
+        window.setTimeout(() => {
+          if (check) voiceCheckQueued = true;
+          else { autoVoiceSync = ""; voiceRetry += 1; }
+        }, 15_000);
+      } else if (result.status === "unavailable") {
+        voiceSyncMessage = "当前打开的是离线作品库。使用雷达自带作品库后可同步关注声优。";
+      } else {
+        voiceSyncMessage = result.message ?? "";
+      }
+    } catch (error) {
+      voiceSyncMessage = `关注声优同步未完成。${String(error).replace(/^Error: /, "")}`;
+    } finally {
+      await pollProgress();
+      voiceSyncing = false;
+    }
   }
 
   function submitCollection(value: string) {
@@ -1496,6 +1573,9 @@
         <UpdateBanner icon={banner.icon} text={banner.text} warning={banner.warning} />
       </div>
     {/if}
+    {#if voiceSyncing}
+      <div class="category-ready" role="status"><span>{voiceSyncDetail || "正在同步关注声优…"}</span></div>
+    {/if}
 
     {#if categoryImportReady && mode === "browse"}
       <div class="category-ready" role="status">
@@ -1569,6 +1649,7 @@
         {unreadTagIds}
         lastCheckedAt={library.data.follow_updates.last_checked_at}
         refreshing={syncing || pipelineBusy}
+        {voiceSyncMessage}
         onclose={() => (mode = "browse")}
         onrefresh={() => void refreshFollowUpdates()}
         onmarkread={markCurrentFollowUpdatesRead}

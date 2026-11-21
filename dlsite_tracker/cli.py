@@ -32,6 +32,7 @@ from .audio import explicit_duration_seconds, workno as audio_workno
 from .quality_new import QualitySpec, run_quality_new
 from .history_rankings import fetch_history_rankings
 from .creator_catalog import fetch_creator_page
+from .followed_voices import FollowedVoiceSync
 from .export import COVER_EXTENSIONS, export_current, export_snapshot
 from .http import REQUIRED_CRAWL_DELAY, Fetcher, HttpError, RobotsChanged
 from .progress import write_task_progress
@@ -555,6 +556,50 @@ def cmd_creator_works(cfg: Config, args: argparse.Namespace) -> int:
         return 1
     finally:
         fetcher.close()
+
+
+def cmd_followed_voices(cfg: Config, args: argparse.Namespace) -> int:
+    if (cfg.sites != [args.site] or cfg.default_work_types != ["SOU"]
+            or args.data_file.resolve() != cfg.out_dir / "works.json"
+            or not (cfg.data_dir / "dlsite.sqlite").is_file()):
+        print(json.dumps({"status": "unavailable"}))
+        return 0
+    paths = jobs.JobPaths(cfg.data_dir, cfg.out_dir, cfg.path)
+    state_file = cfg.out_dir / "voice-sync-progress.json"
+    lock, intent, yielded = jobs.acquire_update_lock(paths, state_file, "followed-voices")
+    if lock is None or intent is None:
+        print(json.dumps({"status": "busy"}))
+        return 0
+    store = fetcher = None
+    wrote_progress = False
+
+    def progress(detail):
+        nonlocal wrote_progress
+        wrote_progress = True
+        write_task_progress(state_file, "import", detail=detail)
+
+    try:
+        store = _open_store(cfg)
+        fetcher = Fetcher.from_config(replace(cfg, page_delay=max(REQUIRED_CRAWL_DELAY, cfg.page_delay)))
+        result = FollowedVoiceSync(cfg, store, fetcher, args.follows_file, progress).run(args.check)
+        failed_voices, pending = result["failed_voices"], result["pending"]
+        summary = f"关注声优同步 · 入库 {result['added']} 部"
+        if failed_voices or pending:
+            summary += f" · {failed_voices} 位目录待重试，{pending} 部资料待补齐"
+        if wrote_progress:
+            write_task_progress(state_file, "failed" if failed_voices or pending else "done", detail=summary)
+        print(json.dumps({"status": "ok", "message": summary if wrote_progress else ""}))
+        return 0
+    except (HttpError, RobotsChanged, ValueError, OSError) as exc:
+        LOG.error("关注声优同步失败：%s", exc)
+        write_task_progress(state_file, "failed", detail=f"关注声优同步失败：{exc}")
+        return 1
+    finally:
+        if fetcher is not None:
+            fetcher.close()
+        if store is not None:
+            store.close()
+        jobs.release_update_lock(paths, lock, intent, yielded)
 
 
 def cmd_quality_new(cfg: Config, args: argparse.Namespace) -> int:
@@ -1374,6 +1419,12 @@ def build_parser() -> argparse.ArgumentParser:
     creator.add_argument("--creator-id", default="")
     creator.add_argument("--page", type=int, default=1)
 
+    followed = sub.add_parser("followed-voices", help="补齐已关注声优；加 --check 时同时增量查新")
+    followed.add_argument("--site", choices=("maniax", "home"), required=True)
+    followed.add_argument("--follows-file", type=Path, required=True)
+    followed.add_argument("--data-file", type=Path, required=True)
+    followed.add_argument("--check", action="store_true")
+
     images = sub.add_parser("images", help="下载封面缩略图到 out/covers/")
     images.add_argument("--limit", type=int, default=None, help="本轮下载上限（默认取配置）")
     images.add_argument(
@@ -1408,7 +1459,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not args.command:
         parser.print_help()
         return 0
-    if args.command in ("history-rankings", "creator-works"):
+    if args.command in ("history-rankings", "creator-works", "followed-voices"):
         # 打包的 Windows 管道可能用系统代码页，桌面端读取 UTF-8 错误信息。
         sys.stderr.reconfigure(encoding="utf-8")
     logging.basicConfig(
@@ -1455,6 +1506,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_history_rankings(cfg, args)
     if args.command == "creator-works":
         return cmd_creator_works(cfg, args)
+    if args.command == "followed-voices":
+        return cmd_followed_voices(cfg, args)
     if args.command == "images":
         return cmd_images(cfg, args)
     if args.command == "serve":

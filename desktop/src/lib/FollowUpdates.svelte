@@ -32,6 +32,7 @@
     circleUnread,
     lastCheckedAt,
     refreshing = false,
+    voiceSyncMessage = "",
     voiceContent,
     onclose,
     onrefresh,
@@ -56,6 +57,7 @@
     circleUnread: number;
     lastCheckedAt: number;
     refreshing?: boolean;
+    voiceSyncMessage?: string;
     voiceContent: Snippet;
     onclose: () => void;
     onrefresh: () => void;
@@ -144,6 +146,9 @@
     <button class="tab" aria-pressed={!showList} onclick={() => (showList = false)}>新作动态</button>
     <button class="tab" aria-pressed={showList} onclick={() => (showList = true)}>关注清单 · {followCount}</button>
   </nav>
+  {#if voiceSyncMessage && (showList || tab === "voice")}
+    <p class="feed-meta" role="status">{voiceSyncMessage}</p>
+  {/if}
   {#if showList}
     <FollowList {tagOptions} {onvoice} {onmaker} {onfindvoices} />
   {:else}
@@ -158,8 +163,8 @@
     </nav>
     <div class="check">
       <button class="btn" disabled={!unread} onclick={onmarkread}>本页全部标为已读</button>
-      <button class="btn primary" disabled={refreshing} onclick={onrefresh}
-        title="启动热榜快更，并刷新关注的新作">
+      <button class="btn primary" disabled={refreshing || (tab === "voice" && !voices.length)} onclick={onrefresh}
+        title={tab === "voice" ? "检查已关注声优并导入新作" : "启动热榜快更，并刷新关注的新作"}>
         {refreshing ? "更新中…" : "检查新作"}
       </button>
     </div>

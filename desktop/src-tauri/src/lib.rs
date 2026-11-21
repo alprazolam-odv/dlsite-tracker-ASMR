@@ -212,6 +212,7 @@ struct ProgressFiles {
     import_progress: Option<String>,
     genre: Option<String>,
     import_coverage: Option<String>,
+    voice_sync: Option<String>,
 }
 
 #[tauri::command]
@@ -223,6 +224,7 @@ fn read_progress_files(app: AppHandle) -> Result<ProgressFiles, String> {
         import_progress: fs::read_to_string(out_dir.join("import-progress.json")).ok(),
         genre: fs::read_to_string(out_dir.join("genre-progress.json")).ok(),
         import_coverage: fs::read_to_string(out_dir.join("import-coverage.json")).ok(),
+        voice_sync: fs::read_to_string(out_dir.join("voice-sync-progress.json")).ok(),
     })
 }
 
@@ -862,6 +864,10 @@ async fn read_dlsite_json(app: &AppHandle, args: &[&str]) -> Result<String, Stri
         { let mut c = Command::new("python3"); c.args(full).current_dir(dir); c }
     };
     command.env("PYTHONIOENCODING", "utf-8");
+    run_pipeline_output(command).await
+}
+
+async fn run_pipeline_output(mut command: Command) -> Result<String, String> {
     let output = tauri::async_runtime::spawn_blocking(move || command.output())
         .await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
     if !output.status.success() {
@@ -898,6 +904,52 @@ async fn load_creator_works(app: AppHandle, creator: CatalogCreator, page: u32) 
     let id = format!("--creator-id={}", creator.id);
     let page = page.to_string();
     read_dlsite_json(&app, &["creator-works", "--site", dlsite_site(&app), "--kind", &creator.kind, &name, &id, "--page", &page]).await
+}
+
+#[derive(Serialize, Deserialize)]
+struct FollowedVoice {
+    id: String,
+    name: String,
+}
+
+#[tauri::command]
+fn save_followed_voices(app: AppHandle, voices: Vec<FollowedVoice>) -> Result<(), String> {
+    let dir = profile_dir(&app)?;
+    let path = dir.join("followed-voices.json");
+    let tmp = dir.join(format!("followed-voices.{}.tmp", std::process::id()));
+    let json = serde_json::to_vec(&voices).map_err(|error| error.to_string())?;
+    fs::create_dir_all(dir).map_err(|error| error.to_string())?;
+    fs::write(&tmp, json).map_err(|error| error.to_string())?;
+    fs::rename(tmp, path).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn sync_followed_voices(app: AppHandle, check: bool) -> Result<String, String> {
+    let data_file = read_settings(&app).data_path.ok_or("尚未选择数据文件")?;
+    let project = project_dir_of(&app)?;
+    let follows = profile_dir(&app)?.join("followed-voices.json");
+    let follows = follows.to_str().ok_or("无法读取声优关注清单路径")?;
+    let mut args = vec!["followed-voices", "--site", dlsite_site(&app), "--follows-file", follows,
+        "--data-file", data_file.as_str()];
+    if check { args.push("--check"); }
+    let mut command = if let Some((sidecar, dir)) = embedded_target(&project) {
+        if !dir.join("config.ini").is_file() {
+            return Ok(r#"{"status":"unavailable"}"#.into());
+        }
+        embedded_command(&sidecar, &dir, &args)?
+    } else {
+        if !is_repo_layout(&project) || !project.join("config.ini").is_file() {
+            return Ok(r#"{"status":"unavailable"}"#.into());
+        }
+        let mut full = vec!["-m", "dlsite_tracker"];
+        full.extend(args);
+        #[cfg(windows)]
+        { python_command(&project, &full)? }
+        #[cfg(not(windows))]
+        { let mut c = Command::new("python3"); c.args(full).current_dir(&project); c }
+    };
+    command.env("PYTHONIOENCODING", "utf-8");
+    run_pipeline_output(command).await
 }
 
 /// 本地同步导出（对齐 macOS 版「更新」：先跑管道导出，再重读文件）。
@@ -1036,6 +1088,8 @@ pub fn run() {
             start_quality_new,
             load_history_rankings,
             load_creator_works,
+            save_followed_voices,
+            sync_followed_voices,
             import_switch,
             cancel_import,
             start_genre_import,
