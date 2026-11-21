@@ -63,8 +63,10 @@ export function durationLabel(seconds?: number | null): string {
   return min >= 60 ? `${Math.floor(min / 60)} 小时 ${min % 60} 分` : `${Math.max(1, min)} 分钟`;
 }
 
+export type EditionWork = Pick<Work, "id" | "original_id" | "related_ids">;
+
 // 官方明确给出的作品关系才合并；不按相同标题或模糊相似度猜测。
-export function editionGroups(works: Work[]): Map<string, string[]> {
+export function editionGroups(works: EditionWork[], keyOf = (id: string) => id): Map<string, string[]> {
   const parent = new Map<string, string>();
   const root = (id: string): string => {
     let next = id;
@@ -78,10 +80,14 @@ export function editionGroups(works: Work[]): Map<string, string[]> {
     return next;
   };
   for (const work of works) {
-    if (!parent.has(work.id)) parent.set(work.id, work.id);
+    const key = keyOf(work.id);
+    if (!key) continue;
+    if (!parent.has(key)) parent.set(key, key);
     for (const id of [work.original_id, ...(work.related_ids ?? [])]) {
       if (!id || !/^RJ\d{6}(?:\d{2})?$/.test(id)) continue;
-      const a = root(work.id), b = root(id);
+      const related = keyOf(id);
+      if (!related) continue;
+      const a = root(key), b = root(related);
       if (a !== b) parent.set(b, a);
       if (!parent.has(a)) parent.set(a, a);
     }

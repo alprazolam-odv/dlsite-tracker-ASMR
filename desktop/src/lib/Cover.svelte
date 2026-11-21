@@ -24,6 +24,9 @@
   const collected = $derived(marks.collected.has(key));
   const excluded = $derived(marks.excluded.has(key));
   const unknown = $derived(marks.unknown.has(key));
+  const collectedTitle = $derived(marks.otherEdition.has(key)
+    ? (unknown ? "上次已收录其他版本，本次待确认" : "音声库中已收录同一作品的其他版本")
+    : (unknown ? "上次已在库，本次待确认" : "音声库中已有此作品"));
 
   const style = $derived(
     `${width !== undefined ? `width:${typeof width === "number" ? `${width}px` : width};` : ""}` +
@@ -42,7 +45,7 @@
   {/if}
   {#if collected || excluded || unknown}
     <div class="library-marks">
-      {#if collected}<span title={unknown ? "上次已在库，本次待确认" : "音声库中已有此作品"}>已在库</span>{/if}
+      {#if collected}<span title={collectedTitle}>已在库</span>{/if}
       {#if excluded}<span title="在音声库中标记为整部排除">已隐藏</span>{/if}
       {#if unknown && !collected}<span title="本次未能确认是否收录">待确认</span>{/if}
     </div>

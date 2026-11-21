@@ -1,10 +1,13 @@
 import { writable } from "svelte/store";
+import { editionGroups, type EditionWork } from "./audio.ts";
 
 type Profile = "adult" | "all-age";
 type Lookup = (endpoint: string, ids: string[], signal: AbortSignal, snapshot?: string) => Promise<unknown>;
-export type LibraryMarks = { collected: Set<string>; excluded: Set<string>; unknown: Set<string> };
+type LookupMarks = { collected: Set<string>; excluded: Set<string>; unknown: Set<string> };
+export type LibraryMarks = LookupMarks & { otherEdition: Set<string> };
 
-const emptyMarks = (): LibraryMarks => ({ collected: new Set(), excluded: new Set(), unknown: new Set() });
+const emptyLookup = (): LookupMarks => ({ collected: new Set(), excluded: new Set(), unknown: new Set() });
+const emptyMarks = (): LibraryMarks => ({ ...emptyLookup(), otherEdition: new Set() });
 const defaults = () => ({
   endpoint: "", hideCollected: false, hideExcluded: false,
   marks: emptyMarks(), syncedAt: 0, partial: false, syncing: false, error: "", storageError: "",
@@ -63,6 +66,43 @@ function readBatch(raw: unknown, ids: string[]) {
 
 type LibraryState = ReturnType<typeof defaults>;
 
+function editionLookupIds(works: EditionWork[], groups: Map<string, string[]>) {
+  const ids = new Map<string, string>();
+  for (const { id } of works) {
+    const key = libraryKey(id);
+    if (key && !ids.has(key)) ids.set(key, id.trim().toUpperCase());
+  }
+  for (const key of [...ids.keys()]) {
+    for (const member of groups.get(key) ?? []) {
+      if (!ids.has(member)) ids.set(member, "RJ" + member.padStart(member.length <= 6 ? 6 : 8, "0"));
+    }
+  }
+  return ids;
+}
+
+function withEditionMarks(checked: LookupMarks, groups: Map<string, string[]>): LibraryMarks {
+  const marks = {
+    ...checked, collected: new Set(checked.collected), unknown: new Set(checked.unknown),
+    otherEdition: new Set<string>(),
+  };
+  for (const members of new Set(groups.values())) {
+    if (members.length <= 1) continue;
+    const confirmed = members.some(id => checked.collected.has(id) && !checked.unknown.has(id));
+    const collected = confirmed || members.some(id => checked.collected.has(id));
+    const unknown = !confirmed && members.some(id => checked.unknown.has(id));
+    for (const key of members) {
+      if (confirmed) marks.unknown.delete(key);
+      if (unknown) marks.unknown.add(key);
+      if (collected) {
+        marks.collected.add(key);
+        const exact = checked.collected.has(key) && (!confirmed || !checked.unknown.has(key));
+        if (!exact) marks.otherEdition.add(key);
+      }
+    }
+  }
+  return marks;
+}
+
 export function visibleLibraryWorks<T extends { id: string }>(works: T[], state: LibraryState): T[] {
   if (!state.endpoint || (!state.hideCollected && !state.hideExcluded)) return works;
   return works.filter(({ id }) => {
@@ -75,7 +115,9 @@ export function createExternalLibrary(lookup: Lookup = fetchLookup, storage = ()
   let state = defaults();
   const store = writable(state);
   let storageKey = "";
-  let catalog: { id: string }[] = [];
+  let catalog: EditionWork[] = [];
+  let groups = editionGroups([]);
+  let checked = emptyLookup();
   let requested = new Map<string, string>();
   let active: AbortController | undefined;
 
@@ -88,10 +130,10 @@ export function createExternalLibrary(lookup: Lookup = fetchLookup, storage = ()
     if (!storageKey) return;
     try {
       if (state.endpoint) {
-        const { endpoint, syncedAt, partial, hideCollected, hideExcluded, marks } = state;
+        const { endpoint, syncedAt, partial, hideCollected, hideExcluded } = state;
         storage().setItem(storageKey, JSON.stringify({
           endpoint, syncedAt, partial, hideCollected, hideExcluded,
-          collected: [...marks.collected], excluded: [...marks.excluded], unknown: [...marks.unknown],
+          collected: [...checked.collected], excluded: [...checked.excluded], unknown: [...checked.unknown],
         }));
       } else {
         storage().removeItem(storageKey);
@@ -106,55 +148,65 @@ export function createExternalLibrary(lookup: Lookup = fetchLookup, storage = ()
     active?.abort();
     active = undefined;
     catalog = [];
+    groups = editionGroups([]);
+    checked = emptyLookup();
     requested = new Map();
     storageKey = `radar.externalLibrary.v1.${profile}`;
     update(defaults());
     try {
       const saved = JSON.parse(storage().getItem(storageKey) ?? "null");
       if (!saved?.endpoint) return;
-      const marks = emptyMarks();
+      const savedMarks = emptyLookup();
       for (const name of ["collected", "excluded", "unknown"] as const) {
         for (const key of saved[name]) {
-          if (typeof key === "string" && /^[1-9][0-9]*$/.test(key)) marks[name].add(key);
+          if (typeof key === "string" && /^[1-9][0-9]*$/.test(key)) savedMarks[name].add(key);
         }
       }
-      update({ endpoint: libraryEndpoint(saved.endpoint), hideCollected: saved.hideCollected === true,
+      const endpoint = libraryEndpoint(saved.endpoint);
+      checked = savedMarks;
+      update({ endpoint, hideCollected: saved.hideCollected === true,
         hideExcluded: saved.hideExcluded === true, syncedAt: Number(saved.syncedAt) || 0,
-        partial: saved.partial === true, marks });
+        partial: saved.partial === true, marks: withEditionMarks(checked, groups) });
     } catch { /* A damaged or unavailable optional cache must not block startup. */ }
+  }
+
+  async function queryBatches(endpoint: string, ids: string[], previous: LookupMarks, controller: AbortController) {
+    const marks = emptyLookup();
+    let partial = false;
+    let snapshot: string | undefined;
+    for (let offset = 0; offset < ids.length; offset += 5000) {
+      const batch = ids.slice(offset, offset + 5000);
+      const timer = setTimeout(() => controller.abort(), 120_000);
+      try {
+        const raw = await lookup(endpoint, batch, controller.signal, snapshot);
+        controller.signal.throwIfAborted();
+        const result = readBatch(raw, batch);
+        snapshot = result.snapshot;
+        partial ||= !result.complete;
+        for (const key of result.collected) marks.collected.add(key);
+        for (const key of result.excluded) marks.excluded.add(key);
+        for (const key of result.unknown) {
+          marks.unknown.add(key);
+          if (previous.collected.has(key)) marks.collected.add(key);
+        }
+      } finally { clearTimeout(timer); }
+    }
+    return { marks, partial };
   }
 
   async function refresh() {
     active?.abort();
     active = undefined;
-    const { endpoint, marks: previous } = state;
+    const { endpoint } = state;
     if (!endpoint || !requested.size) { update({ syncing: false }); return; }
     const controller = new AbortController();
     active = controller;
     update({ syncing: true, error: "" });
-    const ids = [...requested.values()];
-    const marks = emptyMarks();
-    let partial = false;
-    let snapshot: string | undefined;
     try {
-      for (let offset = 0; offset < ids.length; offset += 5000) {
-        const batch = ids.slice(offset, offset + 5000);
-        const timer = setTimeout(() => controller.abort(), 120_000);
-        try {
-          const raw = await lookup(endpoint, batch, controller.signal, snapshot);
-          if (active !== controller) return;
-          const result = readBatch(raw, batch);
-          snapshot = result.snapshot;
-          partial ||= !result.complete;
-          for (const key of result.collected) marks.collected.add(key);
-          for (const key of result.excluded) marks.excluded.add(key);
-          for (const key of result.unknown) {
-            marks.unknown.add(key);
-            if (previous.collected.has(key)) marks.collected.add(key);
-          }
-        } finally { clearTimeout(timer); }
-      }
-      update({ marks, partial, syncedAt: Date.now() });
+      const { marks, partial } = await queryBatches(endpoint, [...requested.values()], checked, controller);
+      if (active !== controller) return;
+      checked = marks;
+      update({ marks: withEditionMarks(checked, groups), partial, syncedAt: Date.now() });
       persist();
     } catch (error) {
       if (active === controller) {
@@ -167,14 +219,12 @@ export function createExternalLibrary(lookup: Lookup = fetchLookup, storage = ()
     }
   }
 
-  function setWorks(works: { id: string }[]) {
+  function setWorks(works: EditionWork[]) {
     catalog = works;
+    groups = editionGroups(works, libraryKey);
     if (!state.endpoint) return;
-    const next = new Map<string, string>();
-    for (const { id } of works) {
-      const key = libraryKey(id);
-      if (key && !next.has(key)) next.set(key, id.trim().toUpperCase());
-    }
+    update({ marks: withEditionMarks(checked, groups) });
+    const next = editionLookupIds(works, groups);
     if (next.size === requested.size && [...next.keys()].every((key) => requested.has(key))) return;
     requested = next;
     return refresh();
@@ -185,6 +235,7 @@ export function createExternalLibrary(lookup: Lookup = fetchLookup, storage = ()
     if (endpoint === state.endpoint) return;
     active?.abort();
     active = undefined;
+    checked = emptyLookup();
     requested = new Map();
     update({ ...defaults(), endpoint });
     persist();
@@ -196,15 +247,13 @@ export function createExternalLibrary(lookup: Lookup = fetchLookup, storage = ()
     persist();
   }
 
-  async function lookupPage(ids: string[], signal: AbortSignal): Promise<LibraryMarks> {
-    const { endpoint, marks: previous } = state;
-    const lookupIds = [...new Map(ids.filter(id => libraryKey(id)).map(id => [libraryKey(id), id])).values()];
+  async function lookupPage(works: EditionWork[], controller: AbortController): Promise<LibraryMarks> {
+    const { endpoint } = state;
+    const pageGroups = editionGroups([...catalog, ...works], libraryKey);
+    const lookupIds = [...editionLookupIds(works, pageGroups).values()];
     if (!endpoint || !lookupIds.length) return emptyMarks();
-    const result = readBatch(await lookup(endpoint, lookupIds, signal), lookupIds);
-    for (const key of result.unknown) {
-      if (previous.collected.has(key)) result.collected.add(key);
-    }
-    return result;
+    const { marks } = await queryBatches(endpoint, lookupIds, checked, controller);
+    return withEditionMarks(marks, pageGroups);
   }
 
   return { subscribe: store.subscribe, useProfile, configure, setWorks, setFilter, refresh, lookupPage };

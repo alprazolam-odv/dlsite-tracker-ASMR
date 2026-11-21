@@ -1,7 +1,10 @@
+import json
 import unittest
+from unittest.mock import Mock
 from urllib.parse import parse_qs, urlsplit
 
-from dlsite_tracker.creator_catalog import creator_url, parse_creator_page
+from dlsite_tracker.creator_catalog import creator_url, fetch_creator_page, parse_creator_page
+from dlsite_tracker.http import HttpError
 
 
 def search_row(id, maker_id="RG101", work_type="SOU", site="home"):
@@ -55,3 +58,29 @@ class CreatorCatalogTest(unittest.TestCase):
                          {"works": [], "has_more": False})
         with self.assertRaises(ValueError):
             parse_creator_page([], "home", "voice", "演员", "", 1)
+
+    def test_online_catalog_adds_official_edition_links_with_one_product_request(self):
+        fetcher = Mock()
+        fetcher.get_text.return_value = json.dumps({
+            "page_info": {"count": 2, "first_indice": 1, "last_indice": 2},
+            "search_result": search_row("RJ123456") + search_row("RJ123457"),
+        })
+        fetcher.get_json.return_value = {"RJ123456": {
+            "translation_info": {"original_workno": "RJ123454", "child_worknos": ["RJ123458"]},
+        }}
+        args = (fetcher, "home", "voice", "演员", "", 1)
+        self.assertNotIn("original_id", fetch_creator_page(*args)["works"][0])
+        fetcher.get_json.assert_not_called()
+        works = fetch_creator_page(*args, include_editions=True)["works"]
+        self.assertEqual(works[0]["original_id"], "RJ123454")
+        self.assertEqual(works[0]["related_ids"], ["RJ123458", "RJ123454"])
+        self.assertNotIn("original_id", works[1])
+        fetcher.get_json.assert_called_once()
+        url = fetcher.get_json.call_args.args[0]
+        self.assertEqual(parse_qs(urlsplit(url).query)["product_id"], ["RJ123456,RJ123457"])
+
+        fetcher.get_json.side_effect = HttpError("offline")
+        with self.assertLogs("dlsite_tracker.creator_catalog", level="WARNING"):
+            fallback = fetch_creator_page(*args, include_editions=True)
+        self.assertEqual([work["id"] for work in fallback["works"]], ["RJ123456", "RJ123457"])
+        self.assertNotIn("original_id", fallback["works"][0])

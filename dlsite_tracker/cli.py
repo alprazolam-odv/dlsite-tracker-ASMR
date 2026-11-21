@@ -548,7 +548,7 @@ def cmd_creator_works(cfg: Config, args: argparse.Namespace) -> int:
     fetcher = Fetcher.from_config(replace(cfg, page_delay=max(REQUIRED_CRAWL_DELAY, cfg.page_delay)))
     try:
         fetcher.verify_robots()
-        result = fetch_creator_page(fetcher, args.site, args.kind, args.name, args.creator_id, args.page)
+        result = fetch_creator_page(fetcher, args.site, args.kind, args.name, args.creator_id, args.page, include_editions=True)
         print(json.dumps(result))
         return 0
     except (HttpError, RobotsChanged, ValueError) as exc:

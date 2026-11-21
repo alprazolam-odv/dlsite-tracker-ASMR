@@ -69,19 +69,16 @@
     checking = false;
     if (!address || !currentPage?.works.length) return;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120_000);
     let current = true;
     checking = true;
-    void externalLibrary.lookupPage(currentPage.works.map(work => work.id), controller.signal).then(
+    void externalLibrary.lookupPage(currentPage.works, controller).then(
       checked => { if (current) pageMarks = checked; },
       () => { if (current) lookupError = "音声库查询失败，当前页使用已有标记。"; },
     ).finally(() => {
-      clearTimeout(timeout);
       if (current) checking = false;
     });
     return () => {
       current = false;
-      clearTimeout(timeout);
       controller.abort();
     };
   });

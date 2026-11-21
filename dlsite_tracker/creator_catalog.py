@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from html import unescape
 from urllib.parse import urlencode
 
-from .audio import workno
+from .audio import edition_metadata, workno
+from .http import HttpError
+from .sales import SALES_API_URL
 
+LOG = logging.getLogger(__name__)
 PAGE_SIZE = 30
 CIRCLE_ID = re.compile(r"RG[0-9]+")
 WORK_ROW = re.compile(r'<li\b[^>]*\bdata-list_item_product_id="(RJ[0-9]+)"[^>]*>(.*?)</li>', re.S)
@@ -88,10 +92,24 @@ def parse_creator_page(payload, site: str, kind: str, name: str, creator_id: str
     return {"works": list(works.values()), "has_more": last < total}
 
 
-def fetch_creator_page(fetcher, site: str, kind: str, name: str, creator_id: str, page: int) -> dict:
+def fetch_creator_page(fetcher, site: str, kind: str, name: str, creator_id: str, page: int, *, include_editions=False) -> dict:
     url = creator_url(site, kind, name, creator_id, page)
     try:
         payload = json.loads(fetcher.get_text(url, kind="page"))
     except json.JSONDecodeError as exc:
         raise ValueError("DLsite 暂时未返回搜索数据，请稍后重试") from exc
-    return parse_creator_page(payload, site, kind, name, creator_id, page)
+    result = parse_creator_page(payload, site, kind, name, creator_id, page)
+    works = result["works"]
+    if include_editions and works:
+        ids = ",".join(work["id"] for work in works)
+        try:
+            products = fetcher.get_json(SALES_API_URL.format(site=site, ids=ids))
+        except HttpError as exc:
+            LOG.warning("读取在线目录的版本关系失败：%s", exc)
+            return result
+        if isinstance(products, dict):
+            for work in works:
+                item = products.get(work["id"])
+                if isinstance(item, dict):
+                    work.update(edition_metadata(item, work["id"]))
+    return result

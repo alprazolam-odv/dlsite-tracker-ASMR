@@ -24,6 +24,31 @@ def workno(value: Any) -> Optional[str]:
     return None
 
 
+def edition_metadata(item: Dict[str, Any], current: Optional[str]) -> Dict[str, Any]:
+    translation = item.get("translation_info")
+    translation = translation if isinstance(translation, dict) else {}
+    original = workno(translation.get("original_workno")) or workno(translation.get("parent_workno"))
+    if original == current:
+        original = None
+    related = []
+    children = translation.get("child_worknos")
+    for entry in children if isinstance(children, list) else []:
+        ident = workno(entry)
+        if ident and ident != current:
+            related.append(ident)
+    for field in ("language_editions", "editions"):
+        editions = item.get(field)
+        if isinstance(editions, dict):
+            editions = list(editions.values())
+        for entry in editions if isinstance(editions, list) else []:
+            ident = workno(entry.get("workno") if isinstance(entry, dict) else entry)
+            if ident and ident != current:
+                related.append(ident)
+    if original:
+        related.append(original)
+    return {"original_id": original, "related_ids": list(dict.fromkeys(related))}
+
+
 def audio_metadata(item: Dict[str, Any]) -> Dict[str, Any]:
     creators = item.get("creaters")
     raw = creators.get("voice_by") if isinstance(creators, dict) else None
@@ -45,29 +70,10 @@ def audio_metadata(item: Dict[str, Any]) -> Dict[str, Any]:
     language = translation.get("lang")
     if isinstance(language, str) and language in LANGUAGE_NAMES:
         languages.append(LANGUAGE_NAMES[language])
-    original = workno(translation.get("original_workno")) or workno(translation.get("parent_workno"))
-    current = workno(item.get("workno"))
-    if original == current:
-        original = None
-    related = []
-    children = translation.get("child_worknos")
-    for entry in children if isinstance(children, list) else []:
-        ident = workno(entry)
-        if ident and ident != current:
-            related.append(ident)
-    for field in ("language_editions", "editions"):
-        editions = item.get(field)
-        for entry in editions if isinstance(editions, list) else []:
-            ident = workno(entry if isinstance(entry, str) else entry.get("workno") if isinstance(entry, dict) else None)
-            if ident and ident != current:
-                related.append(ident)
-    if original:
-        related.append(original)
     return {
         "voice_credits": actors,
         "languages": list(dict.fromkeys(languages)),
-        "original_id": original,
-        "related_ids": list(dict.fromkeys(related)),
+        **edition_metadata(item, workno(item.get("workno"))),
         "has_preview": bool(item.get("trials") or "TRI" in options or item.get("is_viewable_sample")),
     }
 

@@ -137,7 +137,7 @@ test("online creator pages check new RJ IDs without changing Radar's saved marks
   await store.configure(endpoint);
   const onlyOnline = [{ id: "RJ000005" }, { id: "RJ000006" }, catalog[0]];
   const cached = storage.getItem("radar.externalLibrary.v1.adult");
-  const marks = await store.lookupPage(onlyOnline.map(work => work.id), new AbortController().signal);
+  const marks = await store.lookupPage(onlyOnline, new AbortController());
   assert.deepEqual(calls[1], ["RJ000005", "RJ000006", "RJ000001"]);
   assert.deepEqual(marks.collected, new Set(["5", "1"]));
   assert.deepEqual(marks.excluded, new Set(["5"]));
@@ -147,4 +147,68 @@ test("online creator pages check new RJ IDs without changing Radar's saved marks
   }
   assert.deepEqual(get(store).marks.collected, new Set(["1", "2"]));
   assert.equal(storage.getItem("radar.externalLibrary.v1.adult"), cached);
+});
+
+test("an unlisted language edition marks its whole group and uses the same collected filter", async () => {
+  const simplerChinese = "RJ000003";
+  const works = [
+    { id: "RJ000001", related_ids: [simplerChinese] },
+    { id: "RJ000002", original_id: "RJ000001" },
+    { id: "RJ000004", title: "同名但无官方关联" },
+  ];
+  const storage = memoryStorage();
+  let collected = [simplerChinese];
+  let unknown = [];
+  const store = createExternalLibrary(async (_url, ids) => {
+    assert.ok(ids.includes(simplerChinese));
+    return {
+      complete: !unknown.length, collected, unknown, excluded: [simplerChinese],
+      absent: ids.filter(id => !collected.includes(id) && !unknown.includes(id)),
+    };
+  }, () => storage);
+  store.useProfile("adult");
+  await store.setWorks(works);
+  await store.configure(endpoint);
+  assert.deepEqual(get(store).marks.otherEdition, new Set(["1", "2"]));
+  assert.deepEqual(get(store).marks.excluded, new Set(["3"]));
+  assert.deepEqual(visibleLibraryWorks(works, get(store)), works);
+  store.setFilter("hideCollected", true);
+  assert.deepEqual(visibleLibraryWorks(works, get(store)), [works[2]]);
+
+  const offline = createExternalLibrary(async () => { throw new Error("offline"); }, () => storage);
+  offline.useProfile("adult");
+  await offline.setWorks(works);
+  assert.deepEqual(get(offline).marks.otherEdition, new Set(["1", "2"]));
+
+  collected = [];
+  unknown = [works[0].id, simplerChinese];
+  await store.refresh();
+  assert.deepEqual(get(store).marks.otherEdition, new Set(["1", "2"]));
+  assert.deepEqual(get(store).marks.unknown, new Set(["1", "2", "3"]));
+  unknown = [works[0].id];
+  await store.refresh();
+  assert.equal(get(store).marks.collected.size, 0);
+  assert.deepEqual(visibleLibraryWorks(works, get(store)), works);
+});
+
+test("online editions use official links from the page and radar without copying exclusions", async () => {
+  const storage = memoryStorage();
+  const calls = [];
+  const store = createExternalLibrary(async (_url, ids) => {
+    calls.push(ids);
+    return {
+      complete: true, collected: ["RJ000003"], absent: ids.filter(id => id !== "RJ000003"),
+      excluded: ["RJ000003"], unknown: [],
+    };
+  }, () => storage);
+  store.useProfile("adult");
+  await store.setWorks([{ id: "RJ000003", original_id: "RJ000001" }]);
+  await store.configure(endpoint);
+  const page = [{ id: "RJ000005", original_id: "RJ00000001" }, { id: "RJ000006" }];
+  const marks = await store.lookupPage(page, new AbortController());
+  assert.deepEqual(new Set(calls[1]), new Set(["RJ000005", "RJ000006", "RJ000001", "RJ000003"]));
+  assert.ok(marks.otherEdition.has("5"));
+  assert.ok(!marks.excluded.has("5"));
+  assert.deepEqual(visibleLibraryWorks(page, { ...get(store), marks, hideCollected: true }), [page[1]]);
+  assert.ok(!get(store).marks.collected.has("5"));
 });

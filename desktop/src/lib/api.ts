@@ -140,6 +140,8 @@ export interface CatalogCreator {
 
 export interface CreatorWork {
   id: string;
+  original_id?: string | null;
+  related_ids?: string[];
   title: string;
   maker: string;
   url: string;
