@@ -38,13 +38,13 @@
     <div class="sub">
       <button
         class="maker"
-        title="查看该作者的全部库内作品"
+        title="查看该社团的全部库内作品"
         onclick={(event) => {
           event.stopPropagation();
           onmaker?.();
         }}
         ondblclick={(event) => event.stopPropagation()}
-      >{game.maker || "制作者未知"}</button>
+      >{game.maker || "未知社团"}</button>
       {#if showBadges}
         <GameBadges {game} showText={false} ontap={onbadge} />
       {/if}

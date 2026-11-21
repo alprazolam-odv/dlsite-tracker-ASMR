@@ -46,7 +46,7 @@
   <div class="hc-title">{game.title}</div>
   <div class="hc-maker">
     <span class="picon">{@html ICONS.person}</span>
-    <span class="maker">{game.maker || "制作者未知"}</span>
+    <span class="maker">{game.maker || "未知社团"}</span>
     <span class="spacer"></span>
     <span class="id">{game.id}</span>
   </div>

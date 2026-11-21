@@ -38,7 +38,7 @@
   import TagChip from "$lib/TagChip.svelte";
   import { CONTENT_FLAG_TAGS } from "$lib/tag";
   import { matchingGenreCandidates } from "$lib/genreCatalog";
-  import { DEFAULT_COLLECTION_NAME, library } from "$lib/library.svelte";
+  import { DEFAULT_COLLECTION_NAME, library, type FollowedMaker } from "$lib/library.svelte";
   import { prefs } from "$lib/prefs.svelte";
   import { ICONS, categoriesOf } from "$lib/ui";
   import CompactRow from "$lib/CompactRow.svelte";
@@ -47,7 +47,7 @@
   import AudioWorkspace from "$lib/AudioWorkspace.svelte";
   import { audioLibrary } from "$lib/audio.svelte";
   import { uniqueEditions, type Credit } from "$lib/audio";
-  import FollowUpdates from "$lib/FollowUpdates.svelte";
+  import FollowUpdates, { type FollowTab } from "$lib/FollowUpdates.svelte";
   import LargeRow from "$lib/LargeRow.svelte";
   import MediumCard from "$lib/MediumCard.svelte";
   import {
@@ -171,12 +171,12 @@
   let updateError = $state("");
 
   let view = $state<ViewMode>(normalizeView(prefs.data.displayMode));
-  /** 主区模式：浏览（列表）/ 发现（口味匹配与黑马信号） */
   let mode = $state<"browse" | "discover" | "followUpdates" | "audio">("browse");
   let audioActor = $state<Credit | null>(null);
-  let audioTab = $state<"browse" | "following" | "bedtime">("browse");
+  let audioFromFollow = $state(false);
   let audioSeed = $state(0);
   let discoverReturnMode = $state<"browse" | "followUpdates">("browse");
+  let followTab = $state<FollowTab>("voice");
   let followUpdatesVisited = $state(false);
   let returnToFollowUpdates = $state(false);
   let manualRefreshCount = $state(0);
@@ -230,7 +230,9 @@
   const works = $derived(data?.works ?? []);
   const qualityResult = $derived(data?.file.quality_new ?? null);
   const qualityIds = $derived(new Set(qualityResult?.ids ?? []));
-  const audioUnread = $derived(audioLibrary.unread(works).length);
+  const voiceFollowedWorks = $derived(audioLibrary.recentFollowed(works));
+  const unreadVoiceWorks = $derived(audioLibrary.unread(voiceFollowedWorks));
+  const unreadVoiceIds = $derived(new Set(unreadVoiceWorks.map((work) => work.id)));
   const discoveryWorks = $derived(uniqueEditions(works));
 
   /** 测量用「最宽内容」卡片：长标题 + 最长 9 个分类 + 三形式 + 全徽章 + 全数据行 + 折扣价 */
@@ -273,7 +275,7 @@
     return new Set<string>();
   });
   const filtered = $derived(applyFilters(qualityOnly ? works.filter((w) => qualityIds.has(w.id)) : works, filter, sort, { viewFilter, favoriteIds }));
-  /** 发现系统：已关注作者的 key 集合（用于口味得分加分） */
+  /** 发现系统：已关注社团的 key 集合（用于口味得分加分） */
   const followedMakers = $derived(new Set(library.data.makers.map((maker) => maker.key)));
   const recentFollowedWorks = $derived.by(() => {
     const now = new Date();
@@ -291,9 +293,10 @@
   const unreadFollowUpdates = $derived(
     recentFollowedWorks.filter((work) => unreadFollowUpdateIds.has(work.id)),
   );
-  const unreadFollowMakerCount = $derived(
-    new Set(unreadFollowUpdates.map((work) => makerKeyOf(work.maker, work.maker_id))).size,
-  );
+  const followUpdatesUnread = $derived(new Set([
+    ...unreadVoiceIds,
+    ...unreadFollowUpdates.map((work) => work.id),
+  ]).size);
   const seenIds = $derived(library.seenIds());
   const dismissedIds = $derived(library.dismissedIds());
   const genres = $derived(data?.file.genres ?? []);
@@ -395,7 +398,7 @@
     }
   });
 
-  // 作品右键菜单（对齐 macOS GameContextMenu：打开作品页 / 收藏夹 / 关注制作者）
+  // 作品右键菜单：打开作品页、管理收藏夹、关注社团。
   const menuItems = $derived.by(() => {
     const target = cardMenu?.work;
     const items: { label: string; action: () => void; danger?: boolean; divider?: boolean }[] = [];
@@ -423,8 +426,8 @@
     });
     items.push({
       label: library.isFollowing(key)
-        ? `取消关注「${target.maker || "制作者未知"}」`
-        : `关注制作者「${target.maker || "制作者未知"}」`,
+        ? `取消关注社团「${target.maker || "未知社团"}」`
+        : `关注社团「${target.maker || "未知社团"}」`,
       action: () => library.toggleFollow(key, target.maker, target.maker_id ?? ""),
     });
     if (cardMenu?.discovery) {
@@ -1097,7 +1100,7 @@
     viewFilter = {
       kind: "maker",
       key: makerKeyOf(work.maker, work.maker_id),
-      name: work.maker || "制作者未知",
+      name: work.maker || "未知社团",
       makerId: work.maker_id ?? "",
     };
   }
@@ -1196,11 +1199,18 @@
     filter = emptyFilter();
   }
 
-  function openFollowUpdates() {
+  function openFollowUpdates(next?: FollowTab) {
+    if (next) followTab = next;
+    else if (!followUpdatesVisited && !unreadVoiceWorks.length && unreadFollowUpdates.length) followTab = "circle";
+    hideHover();
     followUpdatesVisited = true;
     returnToFollowUpdates = false;
     mode = "followUpdates";
-    library.markFollowUpdatesRead(recentFollowedWorks.map((work) => work.id));
+  }
+
+  function markCurrentFollowUpdatesRead() {
+    if (followTab === "voice") audioLibrary.acknowledge([...unreadVoiceIds]);
+    else library.markFollowUpdatesRead(unreadFollowUpdates.map((work) => work.id));
   }
 
   function toggleDiscover() {
@@ -1213,16 +1223,22 @@
     }
   }
 
-  function openAudio(actor: Credit | null = null, tab: "browse" | "following" | "bedtime" = "browse") {
+  function openAudio(actor: Credit | null = null, fromFollow = false) {
     hideHover();
     audioActor = actor;
-    audioTab = tab;
+    audioFromFollow = fromFollow;
     audioSeed += 1;
     mode = "audio";
   }
 
-  function openMakerFromFollowUpdates(work: WorkView) {
-    showMaker(work);
+  function closeAudio() {
+    if (audioFromFollow) openFollowUpdates();
+    else mode = "browse";
+  }
+
+  function openMakerFromFollowUpdates(maker: FollowedMaker) {
+    viewFilter = { kind: "maker", key: maker.key, name: maker.name, makerId: maker.maker_id };
+    qualityOnly = false;
     returnToFollowUpdates = true;
     mode = "browse";
   }
@@ -1257,7 +1273,6 @@
       {genres}
       {genreCatalog}
       collections={library.data.collections}
-      makers={library.data.makers}
       importProgress={importInfo}
       genreProgress={genreInfo}
       onCreateCollection={(name) => library.createCollection(name)}
@@ -1273,9 +1288,10 @@
       onClearFilters={clearAllFilters}
       onImportToggle={(on) => void handleImportToggle(on)}
       onCancelImport={() => void cancelImport().then(() => pollProgress())}
-      onCancelFollow={(maker) => library.toggleFollow(maker.key, maker.name, maker.maker_id)}
-      followUpdatesSelected={mode === "followUpdates"}
-      followUpdatesUnread={unreadFollowUpdates.length}
+      followTab={mode === "followUpdates" ? followTab : null}
+      voiceUnread={unreadVoiceWorks.length}
+      circleUnread={unreadFollowUpdates.length}
+      {followUpdatesUnread}
       onOpenFollowUpdates={openFollowUpdates}
       onOpenBrowse={() => {
         returnToFollowUpdates = false;
@@ -1331,9 +1347,16 @@
         >
           {@html ICONS.flame}{mode === "discover" ? "返回浏览" : "发现"}
         </button>
+        {#if !prefs.data.sidebarVisible}
+          <button class="btn with-icon" class:active={mode === "followUpdates"} disabled={status !== "ready"}
+            aria-pressed={mode === "followUpdates"} onclick={() => openFollowUpdates()}>
+            {@html ICONS.personCircle}我的关注
+            {#if followUpdatesUnread > 0}<span class="follow-count">{followUpdatesUnread} 部未读</span>{/if}
+          </button>
+        {/if}
         <button class="btn" class:active={mode === "audio"} disabled={status !== "ready"}
-          onclick={() => mode === "audio" ? (mode = "browse") : openAudio()}>
-          音声工作台{audioUnread ? ` · ${audioUnread}` : ""}
+          onclick={() => mode === "audio" ? closeAudio() : openAudio()}>
+          音声工作台
         </button>
         <button
           class="btn with-icon personalization-trigger"
@@ -1395,14 +1418,6 @@
         <UpdateBanner icon={banner.icon} text={banner.text} warning={banner.warning} />
       </div>
     {/if}
-    {#if unreadFollowUpdates.length > 0 && mode !== "followUpdates"}
-      <button class="follow-banner" onclick={openFollowUpdates}>
-        <span class="follow-banner-icon">{@html ICONS.flame}</span>
-        <span>{unreadFollowMakerCount} 位关注作者发布了 {unreadFollowUpdates.length} 部近两周新作</span>
-        <span class="spacer"></span>
-        <span class="follow-banner-link">查看更新</span>
-      </button>
-    {/if}
 
     {#if categoryImportReady && mode === "browse"}
       <div class="category-ready" role="status">
@@ -1450,29 +1465,43 @@
     {/if}
     {#if mode === "audio" && status === "ready" && data}
       {#key audioSeed}
-        <AudioWorkspace {works} ageProfile={profile} initialActor={audioActor} initialTab={audioTab}
-          onopen={openWork} onclose={() => (mode = "browse")}
-          onreload={() => reload({ quiet: true, keepScroll: true })}
-          oncheck={() => runUpdate("quick")} />
+        <AudioWorkspace {works} ageProfile={profile} initialActor={audioActor}
+          unreadIds={unreadVoiceIds} onopen={openWork} onclose={closeAudio}
+          closeLabel={audioFromFollow ? "返回我的关注" : "返回作品浏览"}
+          onreload={() => reload({ quiet: true, keepScroll: true })} />
       {/key}
-    {/if}
-    {#if status === "ready" && audioUnread > 0 && mode !== "audio"}
-      <button class="follow-banner" onclick={() => openAudio(null, "following")}>
-        <span>关注声优发布了 {audioUnread} 部近两周新作</span><span class="spacer"></span><span class="follow-banner-link">查看声优新作</span>
-      </button>
     {/if}
     {#if followUpdatesVisited && status === "ready" && data}
       <FollowUpdates
         active={mode === "followUpdates"}
         resetScrollToken={manualRefreshCount}
-        works={recentFollowedWorks}
-        unreadIds={unreadFollowUpdateIds}
+        bind:tab={followTab}
+        showTabs={!prefs.data.sidebarVisible}
+        voices={audioLibrary.data.following}
+        makers={library.data.makers}
+        voiceWorkCount={voiceFollowedWorks.length}
+        voiceUnread={unreadVoiceWorks.length}
+        circleWorks={recentFollowedWorks}
+        circleUnreadIds={unreadFollowUpdateIds}
+        circleUnread={unreadFollowUpdates.length}
         lastCheckedAt={library.data.follow_updates.last_checked_at}
-        refreshing={syncing || isRunning(progress)}
+        refreshing={syncing || pipelineBusy}
+        onclose={() => (mode = "browse")}
         onrefresh={() => void refreshFollowUpdates()}
+        onmarkread={markCurrentFollowUpdatesRead}
         onopen={(work) => openWork(work.url)}
         onmaker={openMakerFromFollowUpdates}
-      />
+        onvoice={(credit) => openAudio(credit, true)}
+        onfindvoices={() => openAudio(null, true)}
+        onremovevoice={(credit) => audioLibrary.toggle(credit)}
+        onremovemaker={(maker) => library.toggleFollow(maker.key, maker.name, maker.maker_id)}
+      >
+        {#snippet voiceContent()}
+          <AudioWorkspace {works} ageProfile={profile} followedWorks={voiceFollowedWorks}
+            unreadIds={unreadVoiceIds} onactor={(credit) => openAudio(credit, true)}
+            onopen={openWork} onreload={() => reload({ quiet: true, keepScroll: true })} />
+        {/snippet}
+      </FollowUpdates>
     {/if}
     {#if mode === "browse" || status !== "ready" || !data}
       {#if viewFilter.kind !== "all"}
@@ -1482,13 +1511,13 @@
         <span class="strip-count">· 命中 {filtered.length} 部</span>
         <span class="spacer"></span>
         {#if returnToFollowUpdates}
-          <button class="link" onclick={openFollowUpdates}>返回关注更新</button>
+          <button class="link" onclick={() => openFollowUpdates("circle")}>返回社团新作</button>
         {/if}
         {#if activeMaker}
           {#if activeMaker.makerId}
             <button
               class="link with-icon"
-              title="打开该作者主页（网页端，包含未在本机入库的作品）"
+              title="打开该社团主页（网页端，包含未在本机入库的作品）"
               onclick={() =>
                 openWork(
                   `https://www.dlsite.com/${profile === "all-age" ? "home" : "maniax"}/circle/profile/=/maker_id/${activeMaker.makerId}.html`,
@@ -1501,7 +1530,7 @@
             class="link"
             onclick={() => library.toggleFollow(activeMaker.key, activeMaker.name, activeMaker.makerId)}
           >
-            {library.isFollowing(activeMaker.key) ? "取消关注" : "关注此作者"}
+            {library.isFollowing(activeMaker.key) ? "取消关注" : "关注社团"}
           </button>
         {/if}
         <button class="link" onclick={() => (viewFilter = { kind: "all" })}>返回全部作品</button>
@@ -2084,34 +2113,14 @@
     font-size: 12px;
   }
 
-  .follow-banner {
-    width: 100%;
-    flex: none;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    border: 0;
-    border-bottom: 1px solid var(--border);
-    background: color-mix(in srgb, var(--accent) 10%, transparent);
+  .follow-count {
+    border-radius: 999px;
+    padding: 2px 6px;
+    background: color-mix(in srgb, var(--accent) 18%, var(--panel));
     color: var(--text);
-    padding: 9px 22px;
-    font: inherit;
-    font-size: 12px;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .follow-banner-icon,
-  .follow-banner-link {
-    color: var(--accent);
-  }
-
-  .follow-banner-icon {
-    display: inline-flex;
-  }
-
-  .follow-banner-link {
+    font-size: 11px;
     font-weight: 650;
+    white-space: nowrap;
   }
 
   .strip {

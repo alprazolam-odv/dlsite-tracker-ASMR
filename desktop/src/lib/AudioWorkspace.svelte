@@ -4,7 +4,7 @@
   import type { WorkView, Profile } from "./api";
   import {
     AUDIO_THEMES, LISTEN_LABELS, actorDirectory, bedtimeReason, creditKey,
-    creditsOf, durationLabel, editionGroups, hasCredit, recent, sameCredit, themesOf,
+    creditsOf, durationLabel, editionGroups, hasCredit, sameCredit, themesOf,
     uniqueEditions, type Credit, type ListenState,
   } from "./audio";
   import { audioLibrary } from "./audio.svelte";
@@ -12,18 +12,21 @@
   import Cover from "./Cover.svelte";
 
   let {
-    works, ageProfile = "adult", initialActor = null, initialTab = "browse", onopen, onclose, onreload, oncheck,
+    works, ageProfile = "adult", initialActor = null, followedWorks, unreadIds,
+    onactor, onopen, onclose, closeLabel = "返回作品浏览", onreload,
   }: {
     works: WorkView[];
     ageProfile?: Profile;
     initialActor?: Credit | null;
-    initialTab?: "browse" | "following" | "bedtime";
+    followedWorks?: WorkView[];
+    unreadIds: ReadonlySet<string>;
+    onactor?: (credit: Credit) => void;
     onopen: (url: string) => void;
-    onclose: () => void;
+    onclose?: () => void;
+    closeLabel?: string;
     onreload: () => Promise<void>;
-    oncheck: () => Promise<void>;
   } = $props();
-  let tab = $state(untrack(() => initialTab));
+  let tab = $state<"browse" | "bedtime">("browse");
   let selected = $state<Credit[]>(untrack(() => initialActor ? [initialActor] : []));
   let actorQuery = $state("");
   let query = $state("");
@@ -40,7 +43,6 @@
   let actorLimit = $state(12);
   let scanning = $state(false);
   let detailsBusy = $state(false);
-  let checking = $state(false);
   let message = $state("");
   let workspaceEl: HTMLDivElement | null = $state(null);
 
@@ -51,8 +53,7 @@
   const groups = $derived(editionGroups(works));
   const byId = $derived(new Map(works.map((work) => [work.id, work])));
   const localIds = $derived(new Set(audioLibrary.data.localIds));
-  const unread = $derived(audioLibrary.unread(works));
-  const unreadIds = $derived(new Set(unread.map((work) => work.id)));
+  const embedded = $derived(followedWorks !== undefined);
   const profile = $derived(selected.length === 1 ? selected[0] : null);
   const profileWorks = $derived(profile ? works.filter((w) => hasCredit(w, profile!)) : []);
   const circleResults = $derived.by(() => {
@@ -88,8 +89,7 @@
 
   const results = $derived.by(() => {
     const keyword = query.trim().toLowerCase();
-    let found = works.filter((w) => {
-      if (tab === "following" && !(recent(w) && audioLibrary.data.following.some((c) => hasCredit(w, c)))) return false;
+    let found = (followedWorks ?? works).filter((w) => {
       if (selected.length && !selected.every((credit) => hasCredit(w, credit))) return false;
       if (keyword && ![w.title, w.id, w.maker, w.voice_actors ?? "", ...creditsOf(w).map((c) => c.name)]
         .join(" ").toLowerCase().includes(keyword)) return false;
@@ -119,7 +119,14 @@
     query = ""; theme = []; language = ""; duration = ""; listening = ""; previewOnly = false; localOnly = false;
     workspaceEl?.scrollTo({ top: 0 });
   }
-  function openActor(credit: Credit) { switchTab("browse"); selected = [credit]; }
+  function openActor(credit: Credit) {
+    if (onactor) {
+      onactor(credit);
+      return;
+    }
+    switchTab("browse");
+    selected = [credit];
+  }
   function toggleActor(credit: Credit) {
     selected = selected.some((c) => sameCredit(c, credit))
       ? selected.filter((c) => !sameCredit(c, credit)) : [...selected, credit];
@@ -146,12 +153,6 @@
       detailsBusy = false;
     }
   }
-  async function checkUpdates() {
-    checking = true;
-    try { await oncheck(); message = "已发起热榜更新，作品库更新后会自动刷新声优新作。"; }
-    catch (error) { message = String(error); }
-    finally { checking = false; }
-  }
   function officialWork(id: string) {
     if (!/^RJ\d{6}(?:\d{2})?$/.test(id)) return;
     if (ageProfile === "all-age" && !byId.has(id)) return;
@@ -159,25 +160,22 @@
   }
 </script>
 
-<div class="audio-workspace" bind:this={workspaceEl}>
+<div class="audio-workspace" class:embedded bind:this={workspaceEl}>
+  {#if !embedded}
   <header class="workspace-title">
     <div>
       <h2>音声工作台</h2>
       <p>声优、收听记录和音频信息 · 在本机整理你的作品库</p>
     </div>
-    <button onclick={onclose}>返回作品浏览</button>
+    <button onclick={onclose}>{closeLabel}</button>
   </header>
   <nav class="toolbar" aria-label="音声工作台">
     <button aria-pressed={tab === "browse"} class:active={tab === "browse"} onclick={() => switchTab("browse")}>音声与声优</button>
-    <button aria-pressed={tab === "following"} class:active={tab === "following"} onclick={() => switchTab("following")}>
-      声优新作{unread.length ? `（${unread.length}）` : ""}
-    </button>
     <button aria-pressed={tab === "bedtime"} class:active={tab === "bedtime"} onclick={() => switchTab("bedtime")}>睡前推荐</button>
     <span class="grow"></span>
     <button disabled={scanning} onclick={scan}>{scanning ? "识别中…" : "识别本地音频"}</button>
     <button disabled={detailsBusy} onclick={() => void fillDetails()}>{detailsBusy ? "补齐中…" : "补齐音声资料（10 部）"}</button>
   </nav>
-  {#if message}<p class="notice" role="status">{message}</p>{/if}
   <details class="actors" open={tab === "browse"}>
     <summary>声优目录 · {directory.length} 位</summary>
     <div class="actor-search">
@@ -201,22 +199,8 @@
     {#if !actorResults.length}<p class="hint">没有匹配声优；旧库可先补齐资料。</p>{/if}
   </details>
 
-  {#if tab === "following"}
-    <section class="panel">
-      <h3>我关注的声优 · {audioLibrary.data.following.length} 位</h3>
-      <div class="chips">
-        {#each audioLibrary.data.following as credit (creditKey(credit))}
-          <button onclick={() => openActor(credit)}>{credit.name}</button>
-          <button aria-label={`取消关注 ${credit.name}`} onclick={() => audioLibrary.toggle(credit)}>取消关注</button>
-        {/each}
-      </div>
-      {#if !audioLibrary.data.following.length}<p class="hint">在声优目录或作品旁点击关注，近 14 天发售的已入库新作会出现在这里。</p>{/if}
-      <div class="toolbar">
-        <button disabled={checking} onclick={checkUpdates}>检查新作</button>
-        <button disabled={!unread.length} onclick={() => audioLibrary.acknowledge(works)}>全部标为已读（{unread.length}）</button>
-      </div>
-    </section>
   {/if}
+  {#if message}<p class="notice" role="status">{message}</p>{/if}
 
   {#if profile}
     <section class="panel">
@@ -302,7 +286,7 @@
           <button class="work-title" title={work.title} onclick={() => officialWork(work.id)}>{work.title}</button>
           <div class="sub">{work.id} · {work.maker || "社团未知"} · {work.regist_date?.slice(0, 10) || "日期未知"}
             {#if localIds.has(work.id)}<strong> · 本地已有</strong>{/if}
-            {#if unreadIds.has(work.id)}<strong> · 声优新作</strong>{/if}
+            {#if unreadIds.has(work.id)}<strong> · 未读新作</strong>{/if}
           </div>
           <div class="chips">
             {#each creditsOf(work) as credit (creditKey(credit))}
@@ -341,6 +325,7 @@
 
 <style>
   .audio-workspace { flex: 1; min-height: 0; overflow: auto; padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 12px; }
+  .audio-workspace.embedded { flex: none; overflow: visible; padding: 0; }
   .workspace-title, .toolbar, .actor-search, .results-label { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-start; }
   .workspace-title { justify-content: space-between; }
   h2, h3, h4, p { margin: 0; }

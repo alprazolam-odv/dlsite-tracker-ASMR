@@ -4,7 +4,8 @@
   import type { GenreCatalogEntry, GenreEntry, WorkView } from "$lib/api";
   import type { FilterState, ViewFilter } from "$lib/filter";
   import { activeFilterCount, yearOf } from "$lib/filter";
-  import type { FavoriteCollection, FollowedMaker } from "$lib/library.svelte";
+  import type { FavoriteCollection } from "$lib/library.svelte";
+  import type { FollowTab } from "./FollowUpdates.svelte";
   import type { GenreProgress, ImportProgress } from "$lib/pipeline";
   import { yearsLabel } from "$lib/pipeline";
   import { prefs } from "$lib/prefs.svelte";
@@ -23,7 +24,6 @@
     genres,
     genreCatalog,
     collections,
-    makers,
     filter = $bindable(),
     viewFilter = $bindable(),
     importYears = $bindable(),
@@ -39,8 +39,9 @@
     onClearFilters,
     onImportToggle,
     onCancelImport,
-    onCancelFollow,
-    followUpdatesSelected = false,
+    followTab = null,
+    voiceUnread = 0,
+    circleUnread = 0,
     followUpdatesUnread = 0,
     onOpenFollowUpdates,
     onOpenBrowse,
@@ -50,7 +51,6 @@
     genres: GenreEntry[];
     genreCatalog: GenreCatalogEntry[];
     collections: FavoriteCollection[];
-    makers: FollowedMaker[];
     filter: FilterState;
     viewFilter: ViewFilter;
     importYears: string;
@@ -66,10 +66,11 @@
     onClearFilters: () => void;
     onImportToggle: (on: boolean) => void;
     onCancelImport: () => void;
-    onCancelFollow: (maker: FollowedMaker) => void;
-    followUpdatesSelected?: boolean;
+    followTab?: FollowTab | null;
+    voiceUnread?: number;
+    circleUnread?: number;
     followUpdatesUnread?: number;
-    onOpenFollowUpdates: () => void;
+    onOpenFollowUpdates: (tab: FollowTab) => void;
     onOpenBrowse: () => void;
   } = $props();
 
@@ -242,22 +243,6 @@
     };
   }
 
-  function openMakerMenu(maker: FollowedMaker, event: MouseEvent): void {
-    menu = {
-      x: event.clientX,
-      y: event.clientY,
-      items: [
-        {
-          label: "取消关注",
-          danger: true,
-          action: () => {
-            onCancelFollow(maker);
-          },
-        },
-      ],
-    };
-  }
-
   function submitEditor(value: string): void {
     if (!editor) return;
     if (editor.mode === "rename" && editor.id) {
@@ -281,7 +266,7 @@
       icon={ICONS.gridAll}
       title="全部作品"
       count={works.length}
-      selected={!followUpdatesSelected && viewFilter.kind === "all"}
+      selected={!followTab && viewFilter.kind === "all"}
       onclick={() => {
         onOpenBrowse();
         viewFilter = { kind: "all" };
@@ -313,7 +298,7 @@
             icon={ICONS.folder}
             title={collection.name}
             count={collection.work_ids.length}
-            selected={!followUpdatesSelected && viewFilter.kind === "collection" && viewFilter.id === collection.id}
+            selected={!followTab && viewFilter.kind === "collection" && viewFilter.id === collection.id}
             onclick={() => {
               onOpenBrowse();
               viewFilter = { kind: "collection", id: collection.id };
@@ -337,55 +322,35 @@
   <section class="card flat">
     <button
       class="section-head"
-      title={prefs.data.sections.follows ? "收起「关注」" : "展开「关注」"}
+      title={prefs.data.sections.follows ? "收起「我的关注」" : "展开「我的关注」"}
       aria-expanded={prefs.data.sections.follows}
       onclick={() => prefs.toggleSection("follows", !prefs.data.sections.follows)}
     >
       <span class="chev" class:open={prefs.data.sections.follows}>{@html ICONS.chevronRight}</span>
       <span class="bar"></span>
       <span class="sec-icon">{@html ICONS.personCircle}</span>
-      <span class="title">关注</span>
+      <span class="title">我的关注</span>
       <span class="spacer"></span>
-      {#if !prefs.data.sections.follows}<span class="summary">{makers.length} 位作者</span>{/if}
-      {#if followUpdatesUnread > 0}
+      {#if !prefs.data.sections.follows && followUpdatesUnread > 0}
         <span class="follow-unread">{followUpdatesUnread} 部未读</span>
       {/if}
     </button>
     {#if prefs.data.sections.follows}
       <div class="section-body" transition:slide={{ duration: SECTION_DURATION }}>
         <NavRow
-          icon={ICONS.flame}
-          title="关注更新"
-          count={followUpdatesUnread > 0 ? followUpdatesUnread : null}
-          selected={followUpdatesSelected}
-          onclick={onOpenFollowUpdates}
+          icon={ICONS.personCircle}
+          title="声优新作"
+          count={voiceUnread || null}
+          selected={followTab === "voice"}
+          onclick={() => onOpenFollowUpdates("voice")}
         />
-        {#if makers.length > 0}
-          <button
-            class="maker-toggle"
-            aria-expanded={prefs.data.followedMakersExpanded}
-            onclick={() => prefs.set("followedMakersExpanded", !prefs.data.followedMakersExpanded)}
-          >
-            <span class="chev" class:open={prefs.data.followedMakersExpanded}>{@html ICONS.chevronRight}</span>
-            关注的作者（{makers.length}）
-          </button>
-          {#if prefs.data.followedMakersExpanded}
-            <div class="maker-list" transition:slide={{ duration: SECTION_DURATION }}>
-              {#each makers as maker (maker.key)}
-                <NavRow
-                  icon={ICONS.personCircle}
-                  title={maker.name}
-                  selected={!followUpdatesSelected && viewFilter.kind === "maker" && viewFilter.key === maker.key}
-                  onclick={() => {
-                    onOpenBrowse();
-                    viewFilter = { kind: "maker", key: maker.key, name: maker.name, makerId: maker.maker_id };
-                  }}
-                  onmenu={(event) => openMakerMenu(maker, event)}
-                />
-              {/each}
-            </div>
-          {/if}
-        {/if}
+        <NavRow
+          icon={ICONS.flame}
+          title="社团新作"
+          count={circleUnread || null}
+          selected={followTab === "circle"}
+          onclick={() => onOpenFollowUpdates("circle")}
+        />
       </div>
     {/if}
   </section>
@@ -1072,31 +1037,6 @@
     gap: 6px;
     font-size: 12.5px;
     cursor: default;
-  }
-
-  .maker-toggle {
-    appearance: none;
-    border: 0;
-    background: transparent;
-    font: inherit;
-    font-size: 12px;
-    color: var(--muted);
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    width: 100%;
-    padding: 3px 4px;
-    border-radius: 6px;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .maker-toggle:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
-
-  .maker-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
   }
 
   .spin {
