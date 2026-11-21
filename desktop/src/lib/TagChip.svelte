@@ -8,6 +8,7 @@
     removable = false,
     title = "",
     ariaLabel = "",
+    pressed,
     onclick,
     oncontextmenu,
   }: {
@@ -17,6 +18,7 @@
     removable?: boolean;
     title?: string;
     ariaLabel?: string;
+    pressed?: boolean;
     onclick?: () => void;
     oncontextmenu?: (event: MouseEvent) => void;
   } = $props();
@@ -25,6 +27,7 @@
 </script>
 
 {#snippet content()}
+  {#if pressed !== undefined}<span aria-hidden="true">{pressed ? "✓" : "+"}</span>{/if}
   {#if icon}<span class="icon" aria-hidden="true">{@html icon}</span>{/if}
   {#if text}<span class="text">{text}</span>{/if}
   {#if removable}<span class="remove" aria-hidden="true">×</span>{/if}
@@ -35,6 +38,7 @@
     class="chip {kind} {context}"
     {title}
     aria-label={ariaLabel || undefined}
+    aria-pressed={pressed}
     onclick={onclick}
     oncontextmenu={oncontextmenu}
   >{@render content()}</button>
@@ -60,6 +64,9 @@
   }
 
   button.chip { cursor: pointer; }
+  button.chip[aria-pressed] { min-height: 24px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+  button.chip[aria-pressed="true"] { color: var(--text); background: color-mix(in srgb, var(--accent) 24%, var(--panel)); }
+  button.chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   button.chip:hover { filter: brightness(1.12); }
   button.chip.category:hover {
     background: color-mix(in srgb, var(--text) 16%, transparent);

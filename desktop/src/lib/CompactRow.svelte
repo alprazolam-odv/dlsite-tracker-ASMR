@@ -5,6 +5,7 @@
   import GameBadges from "./GameBadges.svelte";
   import GamePrice from "./GamePrice.svelte";
   import HeartButton from "./HeartButton.svelte";
+  import QuickFollowButton from "./QuickFollowButton.svelte";
   import VoiceLine from "./VoiceLine.svelte";
   import type { Credit } from "./audio";
 
@@ -61,6 +62,7 @@
   <span class="meta sales">{fmtNum(game.sales)}</span>
   <span class="meta rating" style:color={cardRatingColor(game)}>{ratingText(game, showRatingCount)}</span>
   <span class="price-box"><GamePrice {game} {showDiscount} /></span>
+  <QuickFollowButton work={game} />
   <HeartButton id={game.id} />
   <button
     class="open"

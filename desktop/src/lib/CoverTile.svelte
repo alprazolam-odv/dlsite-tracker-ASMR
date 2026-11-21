@@ -4,6 +4,7 @@
   import Cover from "./Cover.svelte";
   import GameBadges from "./GameBadges.svelte";
   import HeartButton from "./HeartButton.svelte";
+  import QuickFollowButton from "./QuickFollowButton.svelte";
 
   let {
     game,
@@ -30,9 +31,11 @@
     </div>
   </div>
   <div class="heart"><HeartButton id={game.id} /></div>
+  <div class="follow"><QuickFollowButton work={game} /></div>
 </div>
 
 <style>
+  .follow { position: absolute; top: 35px; left: 6px; }
   .tile {
     position: relative;
     height: 196px;

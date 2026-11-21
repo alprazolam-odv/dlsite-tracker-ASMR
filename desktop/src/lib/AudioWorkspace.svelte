@@ -10,6 +10,9 @@
   import { audioLibrary } from "./audio.svelte";
   import { prefs } from "./prefs.svelte";
   import Cover from "./Cover.svelte";
+  import FollowTags from "./FollowTags.svelte";
+  import QuickFollowButton from "./QuickFollowButton.svelte";
+  import { categoriesOf } from "./ui";
 
   let {
     works, ageProfile = "adult", initialActor = null, followedWorks, unreadIds,
@@ -164,12 +167,11 @@
   {#if !embedded}
   <header class="workspace-title">
     <div>
-      <h2>音声工作台</h2>
-      <p>声优、收听记录和音频信息 · 在本机整理你的作品库</p>
+      <h2>{profile ? profile.name : "声优目录"}</h2>
     </div>
     <button onclick={onclose}>{closeLabel}</button>
   </header>
-  <nav class="toolbar" aria-label="音声工作台">
+  <nav class="toolbar" aria-label="声优目录与推荐">
     <button aria-pressed={tab === "browse"} class:active={tab === "browse"} onclick={() => switchTab("browse")}>音声与声优</button>
     <button aria-pressed={tab === "bedtime"} class:active={tab === "bedtime"} onclick={() => switchTab("bedtime")}>睡前推荐</button>
     <span class="grow"></span>
@@ -296,7 +298,12 @@
             {/each}
             {#if !creditsOf(work).length}<span class="hint">声优未知</span>{/if}
           </div>
-          <p class="sub">{durationLabel(work.duration_seconds)} · {(work.languages ?? []).join(" / ") || "语言未知"} · {themesOf(work).join("、") || "尚无音声主题标签"}</p>
+          <p class="sub">{durationLabel(work.duration_seconds)} · {(work.languages ?? []).join(" / ") || "语言未知"}</p>
+          {#if categoriesOf(work).length}
+            <FollowTags tags={categoriesOf(work)} />
+          {:else}
+            <span class="hint">暂无作品标签</span>
+          {/if}
           {#if tab === "bedtime"}<p class="reason">{bedtimeReason(work, bedtimeMinutes, prefs.data.tasteProfile, audioLibrary.data.following, bedtimeUnknown)?.reason}</p>{/if}
           {#if (groups.get(work.id) ?? []).some((id) => id !== work.id && (ageProfile !== "all-age" || byId.has(id)))}
             <div class="chips"><span class="hint">官方关联版本：</span>
@@ -307,6 +314,7 @@
           {/if}
         </div>
         <div class="work-actions">
+          <QuickFollowButton {work} />
           <label>收听状态 <select value={audioLibrary.data.listening[work.id] ?? ""}
             onchange={(e) => audioLibrary.setListening(work.id, e.currentTarget.value as ListenState | "")}>
             <option value="">未标记</option>{#each Object.entries(LISTEN_LABELS) as [key, label]}<option value={key}>{label}</option>{/each}
@@ -330,7 +338,7 @@
   .workspace-title { justify-content: space-between; }
   h2, h3, h4, p { margin: 0; }
   h2 { font-size: 21px; } h3 { font-size: 16px; } h4 { font-size: 13px; margin-bottom: 6px; }
-  .workspace-title p, .hint, .sub, .results-label { color: var(--muted); font-size: 12px; line-height: 1.5; }
+  .hint, .sub, .results-label { color: var(--muted); font-size: 12px; line-height: 1.5; }
   .grow { flex: 1; }
   button, select, input:not([type="checkbox"]) { border: 1px solid var(--border); color: var(--text); background: var(--panel); border-radius: 7px; min-height: 30px; padding: 5px 8px; font: inherit; font-size: 12px; }
   button { cursor: pointer; } button:hover:not(:disabled), button.active { color: var(--accent); border-color: var(--accent); }

@@ -1,4 +1,5 @@
 import type { Work } from "./api";
+import { categoriesOf } from "./ui.ts";
 
 export type Credit = { id: string; name: string };
 export type ListenState = "want" | "heard" | "disliked";
@@ -102,6 +103,12 @@ export function uniqueEditions<T extends Work>(works: T[], groups = editionGroup
 export function recent(work: Work, now = Date.now()): boolean {
   const date = Date.parse((work.regist_date ?? "").slice(0, 10) + "T00:00:00");
   return Number.isFinite(date) && date <= now && now - date < 14 * 86400_000;
+}
+export function recentTaggedWorks<T extends Work>(works: T[], names: readonly string[], now = Date.now()): T[] {
+  const tags = new Set(names);
+  if (!tags.size) return [];
+  return works.filter((work) => recent(work, now) && categoriesOf(work).some((tag) => tags.has(tag)))
+    .sort((a, b) => b.regist_date.localeCompare(a.regist_date) || b.id.localeCompare(a.id));
 }
 export function bedtimeReason(work: Work, minutes: number, taste: Record<string, string>, following: Credit[], allowUnknown = false): { score: number; reason: string } | null {
   if (!Number.isFinite(minutes) || minutes <= 0) return null;
