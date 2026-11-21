@@ -1,114 +1,43 @@
 <script lang="ts">
-  import type { WorkView } from "$lib/api";
-  import { fmtNum } from "$lib/ui";
+  import type { ComponentProps } from "svelte";
   import Cover from "./Cover.svelte";
-  import GameBadges from "./GameBadges.svelte";
+  import GamePrice from "./GamePrice.svelte";
   import HeartButton from "./HeartButton.svelte";
   import QuickFollowButton from "./QuickFollowButton.svelte";
+  import WorkDetails from "./WorkDetails.svelte";
 
-  let {
-    game,
-    showBadges = true,
-    onbadge,
-  }: {
-    game: WorkView;
-    showBadges?: boolean;
-    onbadge?: (key: "voice" | "music" | "video") => void;
+  let { game, showDiscount = true, ...details }: ComponentProps<typeof WorkDetails> & {
+    showDiscount?: boolean;
   } = $props();
 </script>
 
-<div class="tile">
-  <Cover workId={game.id} src={game._cover} height={196} />
-  <div class="overlay">
-    <div class="spacer"></div>
-    <div class="title">{game.title}</div>
-    <div class="row">
-      {#if showBadges}
-        <GameBadges {game} showText={false} ontap={onbadge} />
-      {/if}
-      <span class="spacer"></span>
-      <span class="price">{typeof game.price === "number" ? `¥${fmtNum(game.price)}` : ""}</span>
-    </div>
+<article class="tile">
+  <div class="cover-wrap">
+    <Cover workId={game.id} src={game._cover} width="100%" height={196} rounded />
+    <div class="heart"><HeartButton id={game.id} /></div>
+    <div class="follow"><QuickFollowButton work={game} /></div>
   </div>
-  <div class="heart"><HeartButton id={game.id} /></div>
-  <div class="follow"><QuickFollowButton work={game} /></div>
-</div>
+  <div class="info">
+    <div class="title">{game.title}</div>
+    <WorkDetails {game} {...details} />
+    <GamePrice {game} {showDiscount} size="sm" />
+  </div>
+</article>
 
 <style>
-  .follow { position: absolute; top: 46px; left: 6px; }
   .tile {
-    position: relative;
-    height: 196px;
-    border-radius: 10px;
-    overflow: hidden;
-    cursor: default;
-    background: linear-gradient(135deg, #4a3873 0%, #21304d 100%);
-  }
-
-  .tile :global(.library-marks) {
-    top: 5px;
-    bottom: auto;
-    right: 36px;
-    z-index: 1;
-  }
-
-  .tile :global(.cover) {
-    width: 100%;
-    height: 100%;
-  }
-
-  .tile :global(.privacy-label) {
-    align-self: center;
-    margin: 0;
-  }
-
-  /* 悬停覆盖层：渐变 + 标题 + 标志/价格（对齐 CoverWallTile） */
-  .overlay {
-    position: absolute;
-    inset: 0;
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 8px;
-    background: linear-gradient(to bottom, rgb(0 0 0 / 5%), rgb(0 0 0 / 78%));
-    opacity: 0;
-    transition: opacity 0.12s ease;
-    pointer-events: none;
+    height: 100%;
+    border-radius: 10px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    box-sizing: border-box;
   }
-
-  .tile:hover .overlay {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .spacer {
-    flex: 1;
-  }
-
-  .title {
-    color: #fff;
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 15px;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .price {
-    color: #fff;
-    font-size: 11px;
-    font-weight: 600;
-  }
-
+  .cover-wrap { position: relative; }
+  .info { display: flex; flex-direction: column; align-items: stretch; gap: 5px; padding: 8px; }
+  .title { font-size: 12px; font-weight: 600; line-height: 16px; overflow-wrap: anywhere; }
+  .follow { position: absolute; top: 46px; left: 6px; }
   .heart {
     position: absolute;
     top: 6px;
@@ -120,20 +49,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    opacity: 0;
-    transition: opacity 0.12s ease;
   }
-
-  .tile:hover .heart,
-  .heart:has(:global(.heart.on)) {
-    opacity: 1;
-  }
-
-  .heart :global(.heart) {
-    color: #fff;
-  }
-
-  .heart :global(.heart.on) {
-    color: #ff5d7d;
-  }
+  .heart :global(.heart) { color: #fff; }
+  .heart :global(.heart.on) { color: #ff5d7d; }
 </style>

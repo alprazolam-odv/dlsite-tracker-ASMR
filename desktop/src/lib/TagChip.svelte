@@ -69,6 +69,7 @@
   }
 
   button.chip { cursor: pointer; }
+  .chip.card { max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; }
   button.chip[draggable="true"] { cursor: grab; user-select: none; }
   button.chip[aria-pressed] { min-height: 24px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
   button.chip[aria-pressed="true"] { color: var(--text); background: color-mix(in srgb, var(--accent) 24%, var(--panel)); }

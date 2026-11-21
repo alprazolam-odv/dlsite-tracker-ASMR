@@ -5,11 +5,9 @@
 
   let {
     game,
-    showText = true,
     ontap,
   }: {
     game: WorkView;
-    showText?: boolean;
     ontap?: (key: ContentFlag) => void;
   } = $props();
 
@@ -21,7 +19,7 @@
     {#each items as item (item.key)}
       <TagChip
         kind={item.key}
-        text={showText ? item.label : ""}
+        text={item.label}
         title={item.help}
         ariaLabel={item.help}
         onclick={ontap ? () => ontap(item.key) : undefined}

@@ -2,7 +2,8 @@
   import { onDestroy } from "svelte";
   import type { WorkView } from "$lib/api";
   import Cover from "./Cover.svelte";
-  import VoiceLine from "./VoiceLine.svelte";
+  import GamePrice from "./GamePrice.svelte";
+  import WorkDetails from "./WorkDetails.svelte";
   import type { Credit } from "./audio";
   import QuickFollowButton from "./QuickFollowButton.svelte";
   import type { DiscoveryItem } from "$lib/discovery";
@@ -12,27 +13,28 @@
     onopen,
     onmaker,
     onvoice,
-    onhover,
-    onleave,
     onseen,
     oncontext,
     seen = false,
+    showDiscount,
+    ...details
   }: {
     item: DiscoveryItem;
     onopen?: (game: WorkView) => void;
     onmaker: (game: WorkView) => void;
     onvoice: (credit: Credit) => void;
-    onhover?: (game: WorkView, event: MouseEvent) => void;
-    onleave?: () => void;
     onseen?: (game: WorkView) => void;
     oncontext?: (game: WorkView, event: MouseEvent) => void;
     seen?: boolean;
+    genreNames: ReadonlyMap<string, string>;
+    showBadges: boolean;
+    showDiscount: boolean;
+    showRatingCount: boolean;
   } = $props();
 
   let seenTimer: ReturnType<typeof setTimeout> | null = null;
 
-  function enter(event: MouseEvent) {
-    onhover?.(item.game, event);
+  function enter() {
     if (!seen) {
       seenTimer = setTimeout(() => {
         seenTimer = null;
@@ -44,7 +46,6 @@
   function leave() {
     if (seenTimer !== null) clearTimeout(seenTimer);
     seenTimer = null;
-    onleave?.();
   }
 
   function open() {
@@ -61,7 +62,6 @@
   class="dcard"
   class:seen
   role="listitem"
-  title={item.game.title}
   ondblclick={open}
   onmouseenter={enter}
   onmouseleave={leave}
@@ -78,12 +78,9 @@
     {#if seen}<span class="seen-badge">看过</span>{/if}
   </div>
   <div class="d-title">{item.game.title}</div>
-  {#if item.game.maker || item.game.maker_id}
-    <button class="maker" title="查看该社团的作品" ondblclick={(event) => event.stopPropagation()}
-      onclick={() => onmaker(item.game)}>{item.game.maker || item.game.maker_id}</button>
-  {/if}
-  <VoiceLine game={item.game} {onvoice} />
-  <div class="d-note" title={item.note}>{item.note}</div>
+  <WorkDetails game={item.game} {...details} {onvoice} onmaker={() => onmaker(item.game)} />
+  <GamePrice game={item.game} {showDiscount} size="sm" />
+  <div class="d-note">{item.note}</div>
   <QuickFollowButton work={item.game} />
 </div>
 
@@ -146,37 +143,12 @@
   .d-title {
     font-size: 12px;
     line-height: 1.35;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+    overflow-wrap: anywhere;
   }
-
-  .maker {
-    align-self: flex-start;
-    max-width: 100%;
-    padding: 0;
-    border: 0;
-    background: none;
-    color: var(--text);
-    font: inherit;
-    font-size: 12px;
-    cursor: pointer;
-    text-align: left;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .maker:hover,
-  .maker:focus-visible { color: var(--accent); text-decoration: underline; }
 
   .d-note {
     font-size: 11px;
     color: var(--accent);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
   }
 </style>

@@ -24,10 +24,9 @@
     onopen,
     onmaker,
     onvoice,
-    onhover,
-    onleave,
     onseen,
     oncontext,
+    ...details
   }: {
     resetScrollToken?: number;
     works: WorkView[];
@@ -39,10 +38,12 @@
     onopen?: (game: WorkView) => void;
     onmaker: (game: WorkView) => void;
     onvoice: (credit: Credit) => void;
-    onhover?: (game: WorkView, event: MouseEvent) => void;
-    onleave?: () => void;
     onseen?: (game: WorkView) => void;
     oncontext?: (game: WorkView, event: MouseEvent) => void;
+    genreNames: ReadonlyMap<string, string>;
+    showBadges: boolean;
+    showDiscount: boolean;
+    showRatingCount: boolean;
   } = $props();
 
   const expanded = $state<Record<string, boolean>>({});
@@ -203,8 +204,7 @@
               {onvoice}
               {item}
               {onopen}
-              {onhover}
-              {onleave}
+              {...details}
               {onseen}
               {oncontext}
               seen={seenIds.has(item.game.id)}
@@ -230,8 +230,7 @@
               {onvoice}
               {item}
               {onopen}
-              {onhover}
-              {onleave}
+              {...details}
               {onseen}
               {oncontext}
               seen={seenIds.has(item.game.id)}

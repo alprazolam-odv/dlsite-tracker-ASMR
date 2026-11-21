@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount, untrack } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
+  import { SvelteMap } from "svelte/reactivity";
   import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
   import { currentMonitor as currentWindowMonitor, getCurrentWindow } from "@tauri-apps/api/window";
   import { openUrl } from "@tauri-apps/plugin-opener";
@@ -30,7 +31,6 @@
   import { filterDragKind, readFilterDrag, type FilterDragItem, type FilterDropTarget } from "$lib/filterDrag";
   import ContextMenu from "$lib/ContextMenu.svelte";
   import DiscoveryFeedbackDialog from "$lib/DiscoveryFeedbackDialog.svelte";
-  import HoverPanel from "$lib/HoverPanel.svelte";
   import UpdateBanner from "$lib/UpdateBanner.svelte";
   import ConfirmDialog from "$lib/ConfirmDialog.svelte";
   import PromptDialog from "$lib/PromptDialog.svelte";
@@ -45,6 +45,7 @@
   import { DEFAULT_COLLECTION_NAME, library, type FollowedMaker } from "$lib/library.svelte";
   import { prefs } from "$lib/prefs.svelte";
   import { ICONS, categoriesOf } from "$lib/ui";
+  import { rowAtOffset, rowOffsets } from "$lib/virtualRows";
   import CompactRow from "$lib/CompactRow.svelte";
   import CoverTile from "$lib/CoverTile.svelte";
   import Discover from "$lib/Discover.svelte";
@@ -115,7 +116,7 @@
       shortcut: "2",
       icon: ICONS.modeTwo,
       kind: "grid",
-      itemH: 226,
+      itemH: 230,
       minW: 296,
       maxCols: 2,
       gap: 12,
@@ -125,7 +126,7 @@
       shortcut: "3",
       icon: ICONS.modeCompact,
       kind: "list",
-      itemH: 78,
+      itemH: 120,
       minW: 0,
       gap: 6,
     },
@@ -134,7 +135,7 @@
       shortcut: "4",
       icon: ICONS.modeGrid,
       kind: "grid",
-      itemH: 226,
+      itemH: 230,
       minW: 296,
       maxCols: 4,
       gap: 12,
@@ -144,7 +145,7 @@
       shortcut: "5",
       icon: ICONS.modeWall,
       kind: "grid",
-      itemH: 196,
+      itemH: 330,
       minW: 150,
       maxW: 230,
       gap: 14,
@@ -198,7 +199,7 @@
   let audioReturnMode = $state<"browse" | "discover" | "followUpdates">("browse");
   let audioSeed = $state(0);
   let quickFollowWork = $state.raw<WorkView | null>(null);
-  setQuickFollow((work) => { hideHover(); quickFollowWork = work; });
+  setQuickFollow((work) => (quickFollowWork = work));
   let discoverReturnMode = $state<"browse" | "followUpdates">("browse");
   let followTab = $state<FollowTab>("voice");
   let followUpdatesVisited = $state(false);
@@ -233,11 +234,6 @@
   let viewportH = $state(800);
   let scrollTop = $state(0);
 
-  let hoverWork = $state<WorkView | null>(null);
-  let hoverX = $state(0);
-  let hoverY = $state(0);
-  let hoverTimer: ReturnType<typeof setTimeout> | null = null;
-
   // 对话框：收藏夹 / 分类导入 / 加入每日刷新 / 年份选择
   let collectionPrompt = $state<{ workId: string } | null>(null);
   let collectionName = $state("");
@@ -267,34 +263,6 @@
   const unreadTagIds = $derived(new Set(audioLibrary.unread(tagWorks, "tag").map((work) => work.id)));
   const discoveryWorks = $derived(uniqueEditions(visibleWorks));
 
-  /** 测量用「最宽内容」卡片：长标题 + 最长 9 个分类 + 三形式 + 全徽章 + 全数据行 + 折扣价 */
-  const measureWork = $derived.by((): WorkView | null => {
-    const base = works[0];
-    if (!base) return null;
-    const top = [...new Set(works.flatMap((work) => categoriesOf(work)))]
-      .sort((a, b) => b.length - a.length)
-      .slice(0, 9);
-    return {
-      ...base,
-      title: base.title.length >= 32 ? base.title : `${base.title} ${base.title}`,
-      category: (top.length > 0 ? top : categoriesOf(base)).join(" | "),
-      form: "模拟/角色扮演/音声",
-      sales: base.sales ?? 123456,
-      rating: base.rating ?? 4.75,
-      rating_count: base.rating_count ?? 123456,
-      regist_date: base.regist_date || "2020-01-01",
-      price: base.price ?? 1000,
-      official_price: (base.price ?? 1000) + 1000,
-      discount_rate: base.discount_rate ?? 50,
-      rank_day_current: base.rank_day_current ?? 1,
-      rank_week_current: base.rank_week_current ?? 2,
-      rank_month_current: base.rank_month_current ?? 3,
-      rank_trend_current: base.rank_trend_current ?? 4,
-      voice: true,
-      music: true,
-      video: true,
-    };
-  });
   const activeCollectionId = $derived(viewFilter.kind === "collection" ? viewFilter.id : "");
   const activeMaker = $derived(viewFilter.kind === "maker" ? viewFilter : null);
   const collectionNameOf = $derived(
@@ -335,6 +303,7 @@
   const dismissedIds = $derived(library.dismissedIds());
   const genres = $derived(data?.file.genres ?? []);
   const genreCatalog = $derived(data?.file.genre_catalog ?? []);
+  const genreNames = $derived(new Map([...genreCatalog, ...genres].map(({ id, name }) => [id, name])));
   const voiceOptions = $derived(actorDirectory(works).map(({ credit }) => credit));
   const tagOptions = $derived([...new Set([...genreCatalog.map((entry) => entry.name), ...works.flatMap(categoriesOf)])]
     .sort((a, b) => a.localeCompare(b, "zh-Hans-CN")));
@@ -353,23 +322,74 @@
       : Math.min(cfg.maxW ?? Number.POSITIVE_INFINITY, (usable - (cols - 1) * cfg.gap) / cols),
   );
 
-  // 行高：按「最宽内容卡片」实测高度取最大值（macOS 网格行高随内容自适应；
-  // 固定行高会裁掉部分卡片的价格/心/打开行，实测可将行高撑到足够）
-  let measureEl = $state<HTMLDivElement | null>(null);
-  let measuredH = $state(0);
-  const itemH = $derived(Math.max(cfg.itemH, Math.ceil(measuredH)));
-  const rowH = $derived(itemH + cfg.gap);
-  const totalRows = $derived(Math.ceil(filtered.length / cols));
-  const totalHeight = $derived(totalRows * rowH);
-  const firstRow = $derived(Math.max(0, Math.floor(scrollTop / rowH) - 1));
-  const lastRow = $derived(Math.min(totalRows, Math.ceil((scrollTop + viewportH) / rowH) + 1));
+  // 未显示的行先用估算高度，显示时按该行最高的卡片测量。
+  const rowLayout = $derived({
+    items: filtered,
+    columns: cols,
+    width: cfg.kind === "list" ? usable : cellW,
+    config: cfg,
+    heights: new SvelteMap<number, number>(),
+  });
+  const totalRows = $derived(Math.ceil(rowLayout.items.length / rowLayout.columns));
+  const offsets = $derived(rowOffsets(totalRows, cfg.itemH + cfg.gap, rowLayout.heights));
+  const firstRow = $derived(Math.max(0, Math.min(totalRows - 1, rowAtOffset(offsets, scrollTop)) - 1));
+  const lastRow = $derived(Math.min(totalRows, rowAtOffset(offsets, scrollTop + viewportH) + 2));
   const rows = $derived.by(() => {
-    const out: { key: number; top: number; items: WorkView[] }[] = [];
-    for (let r = firstRow; r < lastRow; r++) {
-      out.push({ key: r, top: r * rowH, items: filtered.slice(r * cols, (r + 1) * cols) });
+    const out: { index: number; top: number; items: WorkView[] }[] = [];
+    const { items, columns } = rowLayout;
+    for (let index = firstRow; index < lastRow; index++) {
+      out.push({ index, top: offsets[index], items: items.slice(index * columns, (index + 1) * columns) });
     }
     return out;
   });
+
+  type RowMeasurement = { index: number; layout: typeof rowLayout };
+  const measuredRows = new Map<Element, RowMeasurement>();
+  let rowObserver: ResizeObserver | undefined;
+
+  function trackRow(element: HTMLDivElement, measurement: RowMeasurement) {
+    const observer = rowObserver ??= new ResizeObserver(updateRowSizes);
+    measuredRows.set(element, measurement);
+    observer.observe(element);
+    return {
+      update(next: RowMeasurement) {
+        const previous = measuredRows.get(element);
+        if (previous?.layout === next.layout && previous.index === next.index) return;
+        measuredRows.set(element, next);
+        observer.unobserve(element);
+        observer.observe(element);
+      },
+      destroy() {
+        observer.unobserve(element);
+        measuredRows.delete(element);
+      },
+    };
+  }
+
+  function updateRowSizes(entries: ResizeObserverEntry[]) {
+    const layout = rowLayout;
+    const element = scroller;
+    const position = element?.scrollTop ?? 0;
+    const anchor = rowAtOffset(offsets, position);
+    const oldTop = offsets[anchor];
+
+    for (const entry of entries) {
+      const row = measuredRows.get(entry.target);
+      if (row?.layout !== layout) continue;
+      const height = Math.ceil(entry.contentRect.height) + layout.config.gap;
+      layout.heights.set(row.index, height);
+    }
+
+    // 上方行的估算被真实高度替换时，保持眼前作品的滚动位置。
+    const delta = offsets[anchor] - oldTop;
+    if (element && delta) {
+      void tick().then(() => {
+        if (scroller !== element || rowLayout !== layout || element.scrollTop !== position) return;
+        element.scrollTop = position + delta;
+        scrollTop = element.scrollTop;
+      });
+    }
+  }
 
   // 顶部横幅（对齐 macOS library.banner 的优先级：进行中优先于已结束）
   const banner = $derived.by((): { icon: string; text: string; warning?: boolean } | null => {
@@ -621,7 +641,6 @@
   function openCategoryMenu(name: string, event: MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
-    hideHover();
     cardMenu = null;
     categoryMenu = { name, x: event.clientX, y: event.clientY };
   }
@@ -672,19 +691,7 @@
     return () => observer.disconnect();
   });
 
-  // 实测「最宽内容卡片」高度（视图 / 列宽 / 主题变化时自动重测）
-  $effect(() => {
-    const el = measureEl;
-    if (!el) return;
-    const observer = new ResizeObserver(() => {
-      measuredH = el.offsetHeight;
-    });
-    observer.observe(el);
-    measuredH = el.offsetHeight;
-    return () => observer.disconnect();
-  });
-
-  // 筛选 / 排序 / 视图 / 视图范围变化时：回到顶部并收起浮窗与菜单
+  // 筛选 / 排序 / 视图 / 视图范围变化时：回到顶部并收起菜单
   $effect(() => {
     void hideCollected;
     void hideExcluded;
@@ -706,7 +713,6 @@
     void sort;
     void view;
     void viewFilter;
-    hideHover();
     cardMenu = null;
     // 只追踪上方筛选项；容器重建本身不应触发回到顶部。
     untrack(() => scroller?.scrollTo({ top: 0 }));
@@ -733,7 +739,10 @@
     const timer = setInterval(() => {
       if (profileReady) void pollProgress();
     }, 2000);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      rowObserver?.disconnect();
+    };
   });
 
   async function bootstrap() {
@@ -838,7 +847,6 @@
 
   function onScroll(event: Event) {
     scrollTop = (event.currentTarget as HTMLDivElement).scrollTop;
-    hideHover();
     cardMenu = null;
     categoryMenu = null;
   }
@@ -850,7 +858,6 @@
   function openMenu(work: WorkView, event: MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
-    hideHover();
     categoryMenu = null;
     cardMenu = { x: event.clientX, y: event.clientY, work, discovery: false };
   }
@@ -858,7 +865,6 @@
   function openDiscoveryMenu(work: WorkView, event: MouseEvent) {
     event.preventDefault();
     event.stopPropagation();
-    hideHover();
     cardMenu = { x: event.clientX, y: event.clientY, work, discovery: true };
   }
 
@@ -912,35 +918,6 @@
     const target = event.target as HTMLElement | null;
     if (target?.closest(".popover") || target?.closest(".personalization-trigger")) return;
     showPersonalization = false;
-  }
-
-  // P21：悬停 0.5 秒显示浮窗
-  function enterHover(work: WorkView, event: MouseEvent) {
-    cancelHoverTimer();
-    const x = event.clientX;
-    const y = event.clientY;
-    hoverTimer = setTimeout(() => {
-      hoverX = x;
-      hoverY = y;
-      hoverWork = work;
-    }, 500);
-  }
-
-  function leaveHover() {
-    cancelHoverTimer();
-    hoverWork = null;
-  }
-
-  function cancelHoverTimer() {
-    if (hoverTimer !== null) {
-      clearTimeout(hoverTimer);
-      hoverTimer = null;
-    }
-  }
-
-  function hideHover() {
-    cancelHoverTimer();
-    hoverWork = null;
   }
 
   async function pollProgress() {
@@ -1099,7 +1076,6 @@
       }
     }
     if (event.key === "Escape") {
-      hideHover();
       cardMenu = null;
       displayMenu = null;
       updateMenu = null;
@@ -1157,7 +1133,6 @@
 
   function openBrowseForFilter() {
     if (mode === "browse") return;
-    hideHover();
     viewFilter = { kind: "all" };
     makerReturnMode = null;
     qualityOnly = false;
@@ -1166,7 +1141,6 @@
 
   function onFilterDragStart(event: DragEvent) {
     draggingFilter = filterDragKind(event.dataTransfer);
-    if (draggingFilter) hideHover();
   }
 
   function onFilterDragEnd() {
@@ -1217,17 +1191,7 @@
     filter.flags = { ...filter.flags, [key]: !filter.flags[key] };
   }
 
-  // RankDisplay（对齐 macOS）：分类人气态显示该分类名次；官方人气排序显示全站名次
-  function rankTextFor(work: WorkView): string | null {
-    if (filter.genreFocus) {
-      const position = work.genre_pos?.[filter.genreFocus];
-      return typeof position === "number" ? `#${position}` : null;
-    }
-    if (sort === "trend" && typeof work.rank_trend_current === "number") {
-      return `#${work.rank_trend_current}`;
-    }
-    return null;
-  }
+  const activeRank = $derived(filter.genreFocus ? `genre:${filter.genreFocus}` : sort === "trend" ? "trend" : "");
 
   function showMaker(work: WorkView) {
     if (!work.maker && !work.maker_id) return;
@@ -1236,7 +1200,6 @@
   }
 
   function showCircleCatalog(maker: FollowedMaker) {
-    hideHover();
     creatorCatalog = {
       creator: { kind: "circle", name: maker.name, id: maker.maker_id },
       openLocal: () => openMaker(maker),
@@ -1248,7 +1211,6 @@
       openAudio(credit);
       return;
     }
-    hideHover();
     creatorCatalog = {
       creator: { kind: "voice", ...credit },
       openLocal: () => openAudio(credit),
@@ -1256,7 +1218,6 @@
   }
 
   function openMaker(maker: FollowedMaker) {
-    hideHover();
     if (mode !== "browse") makerReturnMode = mode === "audio" ? null : mode;
     filter = emptyFilter();
     qualityOnly = false;
@@ -1368,7 +1329,6 @@
       if (unreadFollowUpdates.length) followTab = "circle";
       else if (unreadTagIds.size) followTab = "tag";
     }
-    hideHover();
     followUpdatesVisited = true;
     makerReturnMode = null;
     mode = "followUpdates";
@@ -1391,7 +1351,6 @@
   }
 
   function openAudio(actor: Credit | null = null) {
-    hideHover();
     audioActor = actor;
     if (mode !== "audio") audioReturnMode = mode;
     audioSeed += 1;
@@ -1688,8 +1647,10 @@
         onopen={(game) => openWork(game.url)}
         onmaker={showMaker}
         onvoice={showVoiceCatalog}
-        onhover={enterHover}
-        onleave={leaveHover}
+        {genreNames}
+        showBadges={prefs.data.showBadges}
+        showDiscount={prefs.data.showDiscount}
+        showRatingCount={prefs.data.showRatingCount}
         onseen={(game) => library.markSeen(game.id)}
         oncontext={openDiscoveryMenu}
       />
@@ -1869,102 +1830,46 @@
         </select>
       </div>
       <div class="scroller" bind:this={scroller} onscroll={onScroll}>
-        <div class="canvas" style="height: {totalHeight + 22}px">
-          {#if measureWork}
+        <div class="canvas" style:height="{offsets[totalRows] + 22}px">
+          {#each rows as row (row.index)}
             <div
-              class="measure"
-              style="width: {cfg.kind === 'list' ? usable : cellW}px"
-              bind:this={measureEl}
-              aria-hidden="true"
+              class="grid-row"
+              style:top="{row.top}px"
+              style:gap="{cfg.gap}px"
+              style:min-height="{cfg.itemH}px"
+              use:trackRow={{ index: row.index, layout: rowLayout }}
             >
-              {#if view === "largeCards"}
-                <LargeRow
-                  game={measureWork}
-                  showBadges
-                  showDiscount
-                  showRatingCount
-                  rankText="#88"
-                  onopen={() => {}}
-                />
-              {:else if view === "compact"}
-                <CompactRow
-                  game={measureWork}
-                  showBadges
-                  showDiscount
-                  showRatingCount
-                  rankText="#88"
-                  onopen={() => {}}
-                />
-              {:else if view === "coverWall"}
-                <CoverTile game={measureWork} showBadges />
-              {:else}
-                <MediumCard
-                  game={measureWork}
-                  showBadges
-                  showDiscount
-                  showRatingCount
-                  rankText="#88"
-                  onopen={() => {}}
-                />
-              {/if}
-            </div>
-          {/if}
-          {#each rows as row (row.key)}
-            <div class="grid-row" style="top: {row.top}px; gap: {cfg.gap}px">
               {#each row.items as w (w.id)}
+                {@const details = {
+                  game: w,
+                  genreNames,
+                  activeRank,
+                  showBadges: prefs.data.showBadges,
+                  showDiscount: prefs.data.showDiscount,
+                  showRatingCount: prefs.data.showRatingCount,
+                  oncats: chipCategory,
+                  oncatmenu: openCategoryMenu,
+                  onform: chipForm,
+                  onbadge: chipBadge,
+                  onmaker: () => showMaker(w),
+                  onvoice: showVoiceCatalog,
+                }}
+                {@const onopen = () => openWork(w.url)}
                 <div
                   class="cell"
                   role="listitem"
-                  style="height: {itemH}px; {cfg.kind === 'list' ? 'flex:1;' : `width:${cellW}px;`}"
-                  ondblclick={() => openWork(w.url)}
+                  style={cfg.kind === "list" ? "flex: 1" : `width: ${rowLayout.width}px`}
+                  ondblclick={onopen}
                   oncontextmenu={(event) => openMenu(w, event)}
-                  onmouseenter={(event) => enterHover(w, event)}
-                  onmouseleave={leaveHover}
                 >
                   {#if view === "largeCards"}
-                    <LargeRow
-                      game={w}
-                      showBadges={prefs.data.showBadges}
-                      showDiscount={prefs.data.showDiscount}
-                      showRatingCount={prefs.data.showRatingCount}
-                      rankText={rankTextFor(w)}
-                      oncats={chipCategory}
-                      oncatmenu={openCategoryMenu}
-                      onform={chipForm}
-                      onbadge={chipBadge}
-                      onmaker={() => showMaker(w)}
-                      onvoice={showVoiceCatalog}
-                      onopen={() => openWork(w.url)}
-                    />
+                    <LargeRow {...details} {onopen} />
                   {:else if view === "compact"}
-                    <CompactRow
-                      game={w}
-                      showBadges={prefs.data.showBadges}
-                      showDiscount={prefs.data.showDiscount}
-                      showRatingCount={prefs.data.showRatingCount}
-                      rankText={rankTextFor(w)}
-                      onbadge={chipBadge}
-                      onmaker={() => showMaker(w)}
-                      onvoice={showVoiceCatalog}
-                      onopen={() => openWork(w.url)}
-                    />
+                    <CompactRow {...details} {onopen} />
                   {:else if view === "coverWall"}
-                    <CoverTile game={w} showBadges={prefs.data.showBadges} onbadge={chipBadge} />
+                    <CoverTile {...details} />
                   {:else}
-                    <MediumCard
-                      game={w}
-                      showBadges={prefs.data.showBadges}
-                      showDiscount={prefs.data.showDiscount}
-                      showRatingCount={prefs.data.showRatingCount}
-                      rankText={rankTextFor(w)}
-                      oncats={chipCategory}
-                      oncatmenu={openCategoryMenu}
-                      onform={chipForm}
-                      onbadge={chipBadge}
-                      onmaker={() => showMaker(w)}
-                      onvoice={showVoiceCatalog}
-                      onopen={() => openWork(w.url)}
-                    />
+                    <MediumCard {...details} {onopen} />
                   {/if}
                 </div>
               {/each}
@@ -2045,10 +1950,6 @@
     {/if}
   </div>
 </div>
-
-{#if hoverWork}
-  <HoverPanel game={hoverWork} x={hoverX} y={hoverY} {genres} />
-{/if}
 
 {#if quickFollowWork}
   <QuickFollowDialog work={quickFollowWork} onclose={() => (quickFollowWork = null)} />
@@ -2499,18 +2400,11 @@
     flex: 1;
     overflow-y: auto;
     overscroll-behavior: contain;
+    overflow-anchor: none;
   }
 
   .canvas {
     position: relative;
-  }
-
-  .measure {
-    position: absolute;
-    left: -20000px;
-    top: 0;
-    visibility: hidden;
-    pointer-events: none;
   }
 
   .grid-row {

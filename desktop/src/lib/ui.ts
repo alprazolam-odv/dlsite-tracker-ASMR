@@ -25,47 +25,22 @@ export function ratingColor(rating: number | null | undefined): string {
   return "#ffc700";
 }
 
-/** 悬停详情：只呈现官方两位小数评分，不把旧半星值冒充精确分。 */
-export function preciseRatingText(game: WorkView): string {
+/** 优先使用官方两位小数评分，旧数据按现有评分精度显示。 */
+export function workRatingText(game: WorkView, showCount = true): string {
   const rating = game.rating_precise;
-  if (typeof rating !== "number" || !Number.isFinite(rating)) return "暂无精确评分";
+  if (typeof rating !== "number" || !Number.isFinite(rating)) return ratingText(game, showCount);
   const base = rating.toFixed(2);
-  if (typeof game.rating_count === "number" && game.rating_count > 0) {
+  if (showCount && typeof game.rating_count === "number" && game.rating_count > 0) {
     return `${base}（${game.rating_count}）`;
   }
   return base;
 }
 
-/** 精确分 ≥4.70 顶档使用粉红色；其它精确值沿用评分梯度。 */
-export function preciseRatingColor(rating: number | null | undefined): string {
-  if (typeof rating !== "number" || !Number.isFinite(rating)) return "var(--muted)";
+/** 官方精确分达到 4.70 时使用粉红色。 */
+export function workRatingColor(game: WorkView): string {
+  const rating = game.rating_precise;
+  if (typeof rating !== "number" || !Number.isFinite(rating)) return ratingColor(game.rating);
   return rating >= 4.7 ? "#ff375f" : ratingColor(rating);
-}
-
-/** 卡片评分顶档：精确分 ≥4.70 仍显示 5，以粉红色区分普通金色 5 分档。 */
-export function cardRatingColor(game: WorkView): string {
-  if (typeof game.rating_precise === "number" && Number.isFinite(game.rating_precise) && game.rating_precise >= 4.7) {
-    return "#ff375f";
-  }
-  return ratingColor(game.rating);
-}
-
-/** 数据行省字：今年 MM-DD，跨年 YYYY-MM */
-export function compactDateText(raw: string | null | undefined): string {
-  const date = (raw ?? "").slice(0, 10);
-  const parts = date.split("-");
-  if (parts.length !== 3) return date || "—";
-  const current = String(new Date().getFullYear());
-  return parts[0] === current ? `${parts[1]}-${parts[2]}` : `${parts[0]}-${parts[1]}`;
-}
-
-/** 热度文案：当前榜位「日X 周Y 月Z」（取 *_current） */
-export function heatText(game: WorkView): string | null {
-  const parts: string[] = [];
-  if (typeof game.rank_day_current === "number") parts.push(`日${game.rank_day_current}`);
-  if (typeof game.rank_week_current === "number") parts.push(`周${game.rank_week_current}`);
-  if (typeof game.rank_month_current === "number") parts.push(`月${game.rank_month_current}`);
-  return parts.length > 0 ? parts.join(" ") : null;
 }
 
 /** 分类拆分（对齐 macOS Game.parts：按 | ; ； 、 ， , 拆分） */

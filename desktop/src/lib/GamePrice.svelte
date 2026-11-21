@@ -38,6 +38,7 @@
 <style>
   .row {
     display: inline-flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 5px;
     min-width: 0;
