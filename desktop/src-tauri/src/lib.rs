@@ -18,8 +18,37 @@ struct Settings {
     data_path: Option<String>,
 }
 
+static PROFILE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+fn current_profile(app: &AppHandle) -> &str {
+    PROFILE.get_or_init(|| {
+        let value = app.path().app_config_dir().ok().and_then(|root| fs::read_to_string(root.join("profile.txt")).ok());
+        if value.as_deref().map(str::trim) == Some("all-age") { "all-age".into() } else { "adult".into() }
+    })
+}
+
+fn profile_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let root = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    Ok(if current_profile(app) == "all-age" { root.join("all-age") } else { root })
+}
+
+#[tauri::command]
+fn get_profile(app: AppHandle) -> String { current_profile(&app).to_string() }
+
+#[tauri::command]
+fn switch_profile(app: AppHandle, profile: String) -> Result<(), String> {
+    if !matches!(profile.as_str(), "adult" | "all-age") {
+        return Err("未知音声模式".into());
+    }
+    if profile == current_profile(&app) { return Ok(()); }
+    let root = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    fs::write(root.join("profile.txt"), profile).map_err(|e| e.to_string())?;
+    app.restart()
+}
+
 fn settings_file(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let dir = profile_dir(app)?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir.join("settings.json"))
 }
@@ -51,14 +80,19 @@ fn allow_data_dir(app: &AppHandle, data_path: &Path) -> Result<(), String> {
 
 /// 只自动查找音声版自己的数据，避免绑定其他应用的项目文件。
 fn discover_data_file(app: &AppHandle) -> Option<PathBuf> {
-    let path = app.path().app_config_dir().ok()?.join("pipeline/out/works.json");
+    let path = profile_dir(app).ok()?.join("pipeline/out/works.json");
     path.is_file().then_some(path)
 }
 
-fn is_audio_export(path: &Path) -> bool {
+fn is_audio_export(path: &Path, profile: &str) -> bool {
     let Ok(raw) = fs::read_to_string(path) else { return false };
     let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else { return false };
-    value["works"].as_array().is_some_and(|works| {
+    if profile == "all-age" {
+        return value["profile"] == "all-age" && value["works"].as_array().is_some_and(|works| {
+            works.iter().all(|work| work["work_type"] == "SOU" && work["site"] == "home" && work["age_category"] == 1)
+        });
+    }
+    value["profile"] != "all-age" && value["works"].as_array().is_some_and(|works| {
         !works.is_empty() && works.iter().all(|work| work["work_type"] == "SOU")
     })
 }
@@ -67,7 +101,7 @@ fn is_audio_export(path: &Path) -> bool {
 #[tauri::command]
 fn get_data_path(app: AppHandle) -> Option<String> {
     if let Some(path) = read_settings(&app).data_path {
-        if discover_data_file(&app).as_deref() == Some(Path::new(&path)) || is_audio_export(Path::new(&path)) {
+        if discover_data_file(&app).as_deref() == Some(Path::new(&path)) || is_audio_export(Path::new(&path), current_profile(&app)) {
             return Some(path);
         }
     }
@@ -104,8 +138,8 @@ async fn pick_data_file(app: AppHandle) -> Result<Option<String>, String> {
         return Ok(None);
     };
     let path = picked.into_path().map_err(|e| e.to_string())?;
-    if !is_audio_export(&path) {
-        return Err("此文件不是音声作品库，或没有可导入的音声作品。".into());
+    if !is_audio_export(&path, current_profile(&app)) {
+        return Err("此文件不是当前模式的音声作品库。".into());
     }
     allow_data_dir(&app, &path)?;
     write_settings(
@@ -136,7 +170,7 @@ fn load_works(app: AppHandle) -> Result<String, String> {
 
 /// 收藏 / 关注数据文件（应用配置目录下 favorites.json；与 macOS 版同构便于迁移）。
 fn library_file(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let dir = profile_dir(app)?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir.join("favorites.json"))
 }
@@ -214,10 +248,14 @@ fn data_file_stamp(app: AppHandle) -> Result<Option<String>, String> {
 /// 项目目录（out 的上一级）。
 fn project_dir_of(app: &AppHandle) -> Result<PathBuf, String> {
     let out_dir = out_dir_of(app)?;
-    out_dir
+    let dir = out_dir
         .parent()
         .map(|path| path.to_path_buf())
-        .ok_or_else(|| "无法确定项目目录（out 的上一级）".to_string())
+        .ok_or_else(|| "无法确定项目目录（out 的上一级）".to_string())?;
+    if current_profile(app) == "all-age" && dir != profile_dir(app)?.join("pipeline") {
+        return Err("全年龄模式的外部导出文件仅供浏览，请初始化本模式的数据后再更新。".into());
+    }
+    Ok(dir)
 }
 
 /// Windows GUI 应用启动控制台型子进程时，默认会额外弹出黑色命令行窗口。
@@ -531,11 +569,12 @@ async fn bootstrap_pipeline(app: AppHandle) -> Result<String, String> {
     let Some(sidecar) = sidecar_path() else {
         return Err("未找到内嵌数据管道（仅打包版支持一键初始化）".to_string());
     };
-    let dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| e.to_string())?
-        .join("pipeline");
+    let dir = profile_dir(&app)?.join("pipeline");
+    if current_profile(&app) == "all-age" && !dir.join("config.ini").is_file() {
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        fs::write(dir.join("config.ini"), "[general]\n[scope]\nsites = home\ndefault_work_types = SOU\n[discovery]\nrank_terms = week, month\nrank_categories = voice\nlist_work_types = audio\n")
+            .map_err(|e| e.to_string())?;
+    }
     ensure_pipeline_config(&dir)?;
     fs::create_dir_all(dir.join("out")).map_err(|e| format!("无法创建数据目录：{e}"))?;
 
@@ -764,6 +803,45 @@ fn start_update(app: AppHandle, kind: String, range: Option<String>) -> Result<S
     }
 }
 
+#[derive(Deserialize)]
+struct QualityNewOptions {
+    days: Option<u32>,
+    start: Option<String>,
+    end: Option<String>,
+    min_sales: u32,
+    protect_days: u32,
+    max_works: u32,
+}
+
+#[tauri::command]
+fn start_quality_new(app: AppHandle, options: QualityNewOptions) -> Result<String, String> {
+    let dir = project_dir_of(&app)?;
+    let mut args = vec![
+        "quality-new".to_string(), "--min-sales".into(), options.min_sales.to_string(),
+        "--protect-days".into(), options.protect_days.to_string(),
+        "--max-works".into(), options.max_works.to_string(),
+    ];
+    match (options.days, options.start, options.end) {
+        (Some(days), None, None) => args.extend(["--days".into(), days.to_string()]),
+        (None, Some(start), Some(end)) => args.extend(["--start".into(), start, "--end".into(), end]),
+        _ => return Err("请选择最近天数或完整的起止日期".into()),
+    }
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let mut command = if let Some((sidecar, project)) = embedded_target(&dir) {
+        embedded_command(&sidecar, &project, &refs)?
+    } else {
+        let mut full = vec!["-m", "dlsite_tracker"];
+        full.extend(refs);
+        #[cfg(windows)]
+        { python_command(&dir, &full)? }
+        #[cfg(not(windows))]
+        { let mut c = Command::new("python3"); c.args(full).current_dir(&dir); c }
+    };
+    command.env("PYTHONIOENCODING", "utf-8");
+    spawn_command(command)?;
+    Ok("已启动优质新作采集".into())
+}
+
 /// 本地同步导出（对齐 macOS 版「更新」：先跑管道导出，再重读文件）。
 /// 返回 "ok"（已导出）或 "no-export"（非管道目录布局，调用方直接重读即可）。
 #[tauri::command]
@@ -886,6 +964,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_data_path,
+            get_profile,
+            switch_profile,
             scan_local_audio,
             refresh_audio_details,
             pick_data_file,
@@ -895,6 +975,7 @@ pub fn run() {
             read_progress_files,
             data_file_stamp,
             start_update,
+            start_quality_new,
             import_switch,
             cancel_import,
             start_genre_import,

@@ -8,16 +8,21 @@ type AudioPreferences = {
   acknowledged: string[];
 };
 const KEY = "radar.audio.v1";
+let storageKey = KEY;
 function load(): AudioPreferences {
   const defaults: AudioPreferences = { following: [], listening: {}, localIds: [], acknowledged: [] };
   try {
-    const parsed = JSON.parse(localStorage.getItem(KEY) ?? "{}");
+    const parsed = JSON.parse(localStorage.getItem(storageKey) ?? "{}");
     return { ...defaults, ...parsed };
   } catch { return defaults; }
 }
 class AudioStore {
   data = $state<AudioPreferences>(load());
-  persist() { try { localStorage.setItem(KEY, JSON.stringify(this.data)); } catch { /* local storage unavailable */ } }
+  useProfile(profile: "adult" | "all-age") {
+    storageKey = profile === "all-age" ? KEY + ".all-age" : KEY;
+    this.data = load();
+  }
+  persist() { try { localStorage.setItem(storageKey, JSON.stringify(this.data)); } catch { /* local storage unavailable */ } }
   isFollowing(credit: Credit) { return this.data.following.some((c) => sameCredit(c, credit)); }
   toggle(credit: Credit) {
     if (this.isFollowing(credit)) this.data.following = this.data.following.filter((c) => !sameCredit(c, credit));

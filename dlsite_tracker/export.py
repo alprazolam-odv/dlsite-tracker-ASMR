@@ -32,7 +32,7 @@ SALES_DELTA_WINDOW_DAYS = 7  # 销量增量窗口（天）——「冲刺中」�
 
 # 导出/查询共用的列集合（供 export 与 serve 复用）
 WORK_SELECT = """
-SELECT w.workno, w.site, w.product_name, w.maker_name, w.maker_id, w.work_type, w.work_type_string,
+SELECT w.workno, w.site, w.product_name, w.maker_name, w.maker_id, w.work_type, w.work_type_string, w.age_category,
        w.price, w.rating_star, w.rating_precise, w.sales, w.official_price, w.discount_rate,
        w.rating_count, w.rank_day, w.rank_week, w.rank_month,
        w.rank_day_date, w.rank_week_date, w.rank_month_date,
@@ -164,6 +164,8 @@ def build_record(
         "rank_trend_current": row["rank_trend_current"],
         "rank_current_seen_at": row["rank_current_seen_at"],
         "work_type": row["work_type"],
+        "site": site,
+        "age_category": row["age_category"],
         "regist_date": row["regist_date"],
         "sales_seen_at": row["sales_seen_at"],
         "maker_id": row["maker_id"] or "",
@@ -194,6 +196,7 @@ def fetch_records(
     store: Store,
     out_dir: Path,
     work_types: Optional[Sequence[str]] = None,
+    profile: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """读取已富化作品并生成导出记录（按作品号稳定排序）。
 
@@ -206,6 +209,10 @@ def fetch_records(
         placeholders = ",".join("?" for _ in work_types)
         clauses.append(f"w.work_type IN ({placeholders})")
         args.extend(work_types)
+    if profile == "all-age":
+        clauses.append("w.site='home' AND w.age_category=1")
+    elif profile == "adult":
+        clauses.append("COALESCE(w.site,'maniax')!='home' AND COALESCE(w.age_category,3)!=1")
     sql = f"{WORK_SELECT} WHERE {' AND '.join(clauses)} ORDER BY w.workno"
     rows = store.conn.execute(sql, args).fetchall()
     genre_map = load_genre_map(store.conn)
@@ -260,6 +267,8 @@ def write_export(
     genres: Optional[Sequence[Dict[str, Any]]] = None,
     genre_catalog: Optional[Sequence[Dict[str, str]]] = None,
     trend: Optional[Dict[str, Any]] = None,
+    quality_new: Optional[Dict[str, Any]] = None,
+    profile: Optional[str] = None,
 ) -> Dict[str, str]:
     """原子写入 works.json 与 works.csv；返回两个文件路径。
 
@@ -276,6 +285,10 @@ def write_export(
         "trend": dict(trend or {"depth": 0, "seen_at": None}),
         "works": list(records),
     }
+    if quality_new is not None:
+        payload["quality_new"] = quality_new
+    if profile is not None:
+        payload["profile"] = profile
     json_path = out_dir / "works.json"
     csv_path = out_dir / "works.csv"
     _atomic_write_text(json_path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
@@ -289,19 +302,27 @@ def export_current(
     """按当前配置导出全部产物（含分类 / 目录 / 人气序元信息）；返回导出注记。"""
     if work_types is None:
         work_types = list(getattr(cfg, "default_work_types", []) or []) or None
-    records = fetch_records(store, cfg.out_dir, work_types=work_types)
+    sites = list(getattr(cfg, "sites", []) or [])
+    profile = ("all-age" if sites == ["home"] else "adult" if sites == ["maniax"] else None) if work_types == ["SOU"] else None
+    records = fetch_records(store, cfg.out_dir, work_types=work_types, profile=profile)
     watched = set(split_list(getattr(cfg, "genre_rank_ids", "") or ""))
     genres = store.genre_summaries()
     for item in genres:
         item["watched"] = item["id"] in watched
     sites = list(getattr(cfg, "sites", []) or [])
     trend_seen = store.get_meta(f"trend_seen:{sites[0]}") if sites else None
+    try:
+        quality_new = json.loads(store.get_meta("quality_new_result") or "null")
+    except (ValueError, TypeError):
+        quality_new = None
     write_export(
         cfg.out_dir,
         records,
         genres=genres,
         genre_catalog=store.list_genre_catalog(),
         trend={"depth": store.rank_trend_depth(), "seen_at": trend_seen},
+        quality_new=quality_new if isinstance(quality_new, dict) else None,
+        profile=profile,
     )
     covered = sum(1 for record in records if record["image_path"])
     return f"{len(records)} 条（含封面 {covered}）"

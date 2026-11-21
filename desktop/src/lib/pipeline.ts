@@ -98,6 +98,7 @@ export function yearsLabel(years: string | number | null | undefined): string {
   if (lower === "daily") return "完整维护";
   if (lower === "quick") return "热榜快更";
   if (lower === "bootstrap") return "首次初始化";
+  if (lower === "quality-new") return "优质新作";
   if (lower.startsWith("since:")) return `自 ${text.slice("since:".length)} 年至今`;
   if (lower.startsWith("deeper:")) {
     return `续深至最近 ${text.slice("deeper:".length)} 年（跳过已覆盖段）`;
@@ -139,6 +140,7 @@ export function updateSummary(
   importProgress: ImportProgress | null,
 ): string {
   const scope = state.years ? `（${yearsLabel(state.years)}）` : "";
+  if (state.years === "quality-new" && state.detail) return state.detail;
   switch (state.phase) {
     case "waiting":
       return `更新待开始${scope}：${state.detail ?? "等待渐进导入保存断点"}`;

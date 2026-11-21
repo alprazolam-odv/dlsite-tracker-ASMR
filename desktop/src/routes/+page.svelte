@@ -10,6 +10,8 @@
     runExport,
     bootstrapPipeline,
     dataFileStamp,
+    getProfile, switchProfile, startQualityNew,
+    type Profile, type QualityNewOptions,
     type LoadedData,
     type WorkView,
   } from "$lib/api";
@@ -30,6 +32,7 @@
   import ConfirmDialog from "$lib/ConfirmDialog.svelte";
   import PromptDialog from "$lib/PromptDialog.svelte";
   import YearPickerDialog from "$lib/YearPickerDialog.svelte";
+  import QualityNewDialog from "$lib/QualityNewDialog.svelte";
   import Sidebar from "$lib/Sidebar.svelte";
   import TasteEditor from "$lib/TasteEditor.svelte";
   import TagChip from "$lib/TagChip.svelte";
@@ -150,6 +153,11 @@
   }
 
   let status = $state<Status>("empty");
+  let profile = $state<Profile>("adult");
+  let profileReady = $state(false);
+  let profileSwitching = $state(false);
+  let qualityDialog = $state(false);
+  let qualityOnly = $state(false);
   let errorMessage = $state("");
   let initializing = $state(false);
   let initProgressObserved = false;
@@ -220,6 +228,8 @@
   let tasteEditorOpen = $state(false);
 
   const works = $derived(data?.works ?? []);
+  const qualityResult = $derived(data?.file.quality_new ?? null);
+  const qualityIds = $derived(new Set(qualityResult?.ids ?? []));
   const audioUnread = $derived(audioLibrary.unread(works).length);
   const discoveryWorks = $derived(uniqueEditions(works));
 
@@ -262,7 +272,7 @@
     if (activeCollectionId) return library.idsIn(activeCollectionId);
     return new Set<string>();
   });
-  const filtered = $derived(applyFilters(works, filter, sort, { viewFilter, favoriteIds }));
+  const filtered = $derived(applyFilters(qualityOnly ? works.filter((w) => qualityIds.has(w.id)) : works, filter, sort, { viewFilter, favoriteIds }));
   /** 发现系统：已关注作者的 key 集合（用于口味得分加分） */
   const followedMakers = $derived(new Set(library.data.makers.map((maker) => maker.key)));
   const recentFollowedWorks = $derived.by(() => {
@@ -438,6 +448,8 @@
   const updateMenuItems = $derived.by(() => {
     const items: { label: string; action: () => void; disabled?: boolean; divider?: boolean }[] = [];
     items.push({ label: "立即更新热榜（快）", action: () => void runUpdate("quick") });
+    items.push({ label: "优质新作采集…", action: () => (qualityDialog = true) });
+    items.push({ label: "查看上次优质新作", disabled: !qualityResult, action: showQualityResults });
     items.push({ label: "完整维护（同每日计划）", action: () => void runUpdate("daily") });
     items.push({ label: "最近一年", divider: true, action: () => void runUpdate("update-all", "1") });
     items.push({ label: "最近三年", action: () => void runUpdate("update-all", "3") });
@@ -622,12 +634,24 @@
   });
 
   onMount(() => {
-    void library.load();
-    void bootstrap();
+    void (async () => {
+      try {
+        profile = await getProfile();
+        prefs.useProfile(profile);
+        audioLibrary.useProfile(profile);
+        view = normalizeView(prefs.data.displayMode);
+        await library.load();
+        profileReady = true;
+        await bootstrap();
+        await pollProgress();
+      } catch (error) {
+        status = "error";
+        errorMessage = String(error);
+      }
+    })();
     const timer = setInterval(() => {
-      void pollProgress();
+      if (profileReady) void pollProgress();
     }, 2000);
-    void pollProgress();
     return () => clearInterval(timer);
   });
 
@@ -938,6 +962,42 @@
     }
   }
 
+  async function runQuality(options: QualityNewOptions) {
+    if (pipelineBusy || syncing || status !== "ready") return;
+    qualityDialog = false;
+    updateStarting = true;
+    const launchToken = ++updateLaunchToken;
+    try {
+      await startQualityNew(options);
+      await pollProgress();
+    } catch (error) {
+      updateStarting = false;
+      updateError = String(error);
+    } finally {
+      setTimeout(() => { if (launchToken === updateLaunchToken) updateStarting = false; }, 30000);
+    }
+  }
+
+  function showQualityResults() {
+    if (!qualityResult) return;
+    clearAllFilters();
+    viewFilter = { kind: "all" };
+    sort = "sales";
+    mode = "browse";
+    qualityOnly = true;
+    scroller?.scrollTo({ top: 0 });
+    scrollTop = 0;
+  }
+
+  async function changeProfile() {
+    if (!profileReady || profileSwitching || pipelineBusy || initializing) return;
+    profileSwitching = true;
+    try {
+      if (library.loaded) await library.save();
+      await switchProfile(profile === "adult" ? "all-age" : "adult");
+    } catch (error) { updateError = String(error); profileSwitching = false; }
+  }
+
   function setView(mode: ViewMode) {
     view = mode;
     prefs.set("displayMode", mode);
@@ -1219,6 +1279,7 @@
       onOpenFollowUpdates={openFollowUpdates}
       onOpenBrowse={() => {
         returnToFollowUpdates = false;
+        qualityOnly = false;
         mode = "browse";
       }}
     />
@@ -1228,7 +1289,7 @@
     <header class="header">
       <div class="brand">
         <div class="brand-line">
-          <div class="brand-title">同人音声雷达</div>
+          <div class="brand-title">同人音声雷达 · {profile === "all-age" ? "全年龄" : "成人区"}</div>
           <button
             class="info-btn"
             title="数据来自你导入的文件。「更新」重读同一文件；「开始更新数据」运行本地管道（导入 → 销量 → 封面 → 导出），完成后自动刷新。收藏与偏好保存在本机。"
@@ -1239,6 +1300,10 @@
         <div class="brand-sub">{statusText}</div>
       </div>
       <div class="actions">
+        <button class="btn" disabled={!profileReady || profileSwitching || pipelineBusy || initializing}
+          title="切换独立作品库、收藏与关注；程序会重新启动" onclick={() => void changeProfile()}>
+          {profileSwitching ? "切换中…" : profile === "all-age" ? "切换成人区" : "切换全年龄"}
+        </button>
         <button
           class="icon-btn"
           title={prefs.data.sidebarVisible ? "收起筛选侧栏（窗口同步缩回）" : "展开筛选侧栏（窗口同步扩展）"}
@@ -1350,6 +1415,22 @@
         <button class="link" aria-label="关闭导入完成提示" onclick={() => (categoryImportReady = null)}>×</button>
       </div>
     {/if}
+    {#if qualityResult && mode === "browse"}
+      <div class="category-ready" role="status">
+        <span>优质新作 · {qualityResult.start} 至 {qualityResult.end} · {qualityResult.ids.length} 部（保护 {qualityResult.protected} 部）</span>
+        <span class="spacer"></span>
+        {#if qualityOnly}
+          <button class="link" onclick={() => (qualityOnly = false)}>返回全部作品</button>
+        {:else}
+          <button class="link" onclick={showQualityResults}>查看本次采集</button>
+        {/if}
+      </div>
+      {#if qualityOnly}
+        <div class="strip">
+          <span>最低销量 {qualityResult.min_sales} · 新作保护 {qualityResult.protect_days} 天 · 新增 {qualityResult.added} 部 · 低销量跳过 {qualityResult.low_sales} 部</span>
+        </div>
+      {/if}
+    {/if}
 
     {#if mode === "discover" && status === "ready" && data}
       <Discover
@@ -1369,7 +1450,7 @@
     {/if}
     {#if mode === "audio" && status === "ready" && data}
       {#key audioSeed}
-        <AudioWorkspace {works} initialActor={audioActor} initialTab={audioTab}
+        <AudioWorkspace {works} ageProfile={profile} initialActor={audioActor} initialTab={audioTab}
           onopen={openWork} onclose={() => (mode = "browse")}
           onreload={() => reload({ quiet: true, keepScroll: true })}
           oncheck={() => runUpdate("quick")} />
@@ -1410,7 +1491,7 @@
               title="打开该作者主页（网页端，包含未在本机入库的作品）"
               onclick={() =>
                 openWork(
-                  `https://www.dlsite.com/maniax/circle/profile/=/maker_id/${activeMaker.makerId}.html`,
+                  `https://www.dlsite.com/${profile === "all-age" ? "home" : "maniax"}/circle/profile/=/maker_id/${activeMaker.makerId}.html`,
                 )}
             >
               {@html ICONS.external}在 DLsite 查看全量作品
@@ -1787,6 +1868,10 @@
     }}
     oncancel={() => (joinDailyRequest = null)}
   />
+{/if}
+
+{#if qualityDialog}
+  <QualityNewDialog {profile} onsubmit={runQuality} oncancel={() => (qualityDialog = false)} />
 {/if}
 
 {#if yearDialog?.mode === "update"}

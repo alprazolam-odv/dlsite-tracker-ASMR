@@ -28,6 +28,7 @@ from .discovery import (
 )
 from .enrich import enrich_pending, PRODUCT_API_URL, parse_product
 from .audio import explicit_duration_seconds, workno as audio_workno
+from .quality_new import QualitySpec, run_quality_new
 from .export import COVER_EXTENSIONS, export_current, export_snapshot
 from .http import Fetcher, HttpError, RobotsChanged
 from .progress import write_task_progress
@@ -523,6 +524,57 @@ def cmd_export(cfg: Config, args: argparse.Namespace) -> int:
         return 1
     finally:
         store.close()
+
+
+def cmd_quality_new(cfg: Config, args: argparse.Namespace) -> int:
+    try:
+        spec = QualitySpec.create(args.days, args.start, args.end, args.min_sales, args.protect_days, args.max_works)
+    except ValueError as exc:
+        LOG.error("采集条件错误：%s", exc)
+        return 2
+    if not (cfg.data_dir / "dlsite.sqlite").is_file():
+        LOG.error("缺少原始作品库，请先初始化数据")
+        return 1
+    paths = jobs.JobPaths(cfg.data_dir, cfg.out_dir, cfg.path)
+    state_file = cfg.out_dir / "update-progress.json"
+    lock, intent, yielded = jobs.acquire_update_lock(paths, state_file, "quality-new")
+    if lock is None or intent is None:
+        LOG.warning("其他数据任务正在运行，请稍后再采集")
+        return 3
+    store = fetcher = None
+    handler = logging.FileHandler(cfg.data_dir / "quality-new.log", encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logging.getLogger().addHandler(handler)
+    def progress(phase, detail):
+        LOG.info("%s", detail)
+        write_task_progress(state_file, phase, detail=detail, years="quality-new")
+    try:
+        progress("rankings", f"优质新作：{spec.start} 至 {spec.end} · 最低销量 {spec.min_sales} · 新作保护 {spec.protect_days} 天")
+        store = _open_store(cfg)
+        fetcher = _fetcher(cfg)
+        result = run_quality_new(cfg, store, fetcher, spec, progress)
+        summary = (f"收录 {len(result['ids'])} 部 · 新增 {result['added']} · 已有 {result['already']} · "
+                   f"保护 {result['protected']} · 低销量跳过 {result['low_sales']} · 资料不足 {result['unknown']}")
+        if result["scope_excluded"]:
+            summary += f" · 排除其他年龄模式 {result['scope_excluded']}"
+        failures = result["failed"]
+        if failures:
+            progress("failed", f"{summary} · {failures} 部资料补齐失败，可重试")
+            return 1
+        progress("done", summary)
+        return 0
+    except (HttpError, RobotsChanged, ValueError, OSError) as exc:
+        LOG.error("优质新作采集失败：%s", exc)
+        write_task_progress(state_file, "failed", detail="优质新作采集失败，详见 data/quality-new.log", years="quality-new")
+        return 1
+    finally:
+        if fetcher is not None:
+            fetcher.close()
+        if store is not None:
+            store.close()
+        logging.getLogger().removeHandler(handler)
+        handler.close()
+        jobs.release_update_lock(paths, lock, intent, yielded)
 
 
 def cmd_audio_details(cfg: Config, args: argparse.Namespace) -> int:
@@ -1271,6 +1323,13 @@ def build_parser() -> argparse.ArgumentParser:
     audio_details = sub.add_parser("audio-details", help="补齐音声资料和作品页明示的总时长")
     audio_details.add_argument("--limit", type=int, default=10)
     audio_details.add_argument("--workno", default=None)
+    quality = sub.add_parser("quality-new", help="按发售日期和最低销量采集优质新音声")
+    quality.add_argument("--days", type=int, default=None)
+    quality.add_argument("--start", default=None)
+    quality.add_argument("--end", default=None)
+    quality.add_argument("--min-sales", type=int, default=100)
+    quality.add_argument("--protect-days", type=int, default=3)
+    quality.add_argument("--max-works", type=int, default=0)
     export.add_argument("--work-types", default=None, help="逗号分隔的作品形式过滤（默认取配置 default_work_types）")
 
     images = sub.add_parser("images", help="下载封面缩略图到 out/covers/")
@@ -1345,6 +1404,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_export(cfg, args)
     if args.command == "audio-details":
         return cmd_audio_details(cfg, args)
+    if args.command == "quality-new":
+        return cmd_quality_new(cfg, args)
     if args.command == "images":
         return cmd_images(cfg, args)
     if args.command == "serve":

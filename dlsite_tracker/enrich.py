@@ -177,7 +177,7 @@ def enrich_one(
         LOG.warning("富化无有效数据：%s", workno)
         return None
     row, genres = parsed
-    if getattr(cfg, "default_work_types", []) == ["SOU"] and row.get("work_type") != "SOU":
+    if not scope_allows(cfg, row):
         store.add_excluded(workno, row.get("work_type"))
         store.finish_pending(workno)
         return row
@@ -185,6 +185,17 @@ def enrich_one(
     store.replace_genres(workno, genres)
     store.finish_pending(workno)
     return row
+
+
+def scope_allows(cfg, row) -> bool:
+    if getattr(cfg, "default_work_types", []) == ["SOU"] and row.get("work_type") != "SOU":
+        return False
+    sites = getattr(cfg, "sites", [])
+    if sites == ["home"]:
+        return row.get("site") == "home" and row.get("age_category") == 1
+    if sites == ["maniax"] and getattr(cfg, "default_work_types", []) == ["SOU"]:
+        return row.get("site") != "home" and row.get("age_category") != 1
+    return True
 
 
 def enrich_pending(
@@ -231,7 +242,7 @@ def enrich_pending(
         else:
             ok += 1
             consecutive = 0
-            if getattr(cfg, "default_work_types", []) != ["SOU"] or row.get("work_type") == "SOU":
+            if scope_allows(cfg, row):
                 enriched_worknos.append(workno)
         if order % 50 == 0:
             LOG.info("富化进行中：%d/%d（成功 %d 失败 %d）", order, len(batch), ok, fail)

@@ -39,7 +39,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .jobs import PipelineLock, process_alive
 from .discovery import catalog_page_url, extract_catalog_items, extract_sales
-from .enrich import enrich_one
+from .enrich import enrich_one, scope_allows
 from .export import export_snapshot
 from .http import HttpError
 from .images import download_covers, download_entries, list_missing_covers
@@ -812,7 +812,7 @@ def run_import(
                         session["failed"] += 1
                     elif cutoff is not None and (released := release_day(row.get("regist_date"))) is not None and released < cutoff:
                         store.delete_work(workno)
-                    elif keep_types and str(row.get("work_type") or "") not in keep_types:
+                    elif (keep_types and str(row.get("work_type") or "") not in keep_types) or not scope_allows(cfg, row):
                         # 非游戏：记入排除清单并删除，避免下次再被候选选中
                         store.add_excluded(workno, row.get("work_type"))
                         store.delete_work(workno)

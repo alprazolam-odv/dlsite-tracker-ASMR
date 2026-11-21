@@ -1,7 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { untrack } from "svelte";
-  import type { WorkView } from "./api";
+  import type { WorkView, Profile } from "./api";
   import {
     AUDIO_THEMES, LISTEN_LABELS, actorDirectory, bedtimeReason, creditKey,
     creditsOf, durationLabel, editionGroups, hasCredit, recent, sameCredit, themesOf,
@@ -12,9 +12,10 @@
   import Cover from "./Cover.svelte";
 
   let {
-    works, initialActor = null, initialTab = "browse", onopen, onclose, onreload, oncheck,
+    works, ageProfile = "adult", initialActor = null, initialTab = "browse", onopen, onclose, onreload, oncheck,
   }: {
     works: WorkView[];
+    ageProfile?: Profile;
     initialActor?: Credit | null;
     initialTab?: "browse" | "following" | "bedtime";
     onopen: (url: string) => void;
@@ -153,6 +154,7 @@
   }
   function officialWork(id: string) {
     if (!/^RJ\d{6}(?:\d{2})?$/.test(id)) return;
+    if (ageProfile === "all-age" && !byId.has(id)) return;
     onopen(byId.get(id)?.url ?? `https://www.dlsite.com/maniax/work/=/product_id/${id}.html`);
   }
 </script>
@@ -312,9 +314,9 @@
           </div>
           <p class="sub">{durationLabel(work.duration_seconds)} · {(work.languages ?? []).join(" / ") || "语言未知"} · {themesOf(work).join("、") || "尚无音声主题标签"}</p>
           {#if tab === "bedtime"}<p class="reason">{bedtimeReason(work, bedtimeMinutes, prefs.data.tasteProfile, audioLibrary.data.following, bedtimeUnknown)?.reason}</p>{/if}
-          {#if (groups.get(work.id)?.length ?? 1) > 1}
+          {#if (groups.get(work.id) ?? []).some((id) => id !== work.id && (ageProfile !== "all-age" || byId.has(id)))}
             <div class="chips"><span class="hint">官方关联版本：</span>
-              {#each (groups.get(work.id) ?? []).filter((id) => id !== work.id) as id (id)}
+              {#each (groups.get(work.id) ?? []).filter((id) => id !== work.id && (ageProfile !== "all-age" || byId.has(id))) as id (id)}
                 <button onclick={() => officialWork(id)}>{id} {byId.get(id)?.languages?.join("/") || ""}{id === work.original_id ? "（原版）" : ""}</button>
               {/each}
             </div>

@@ -34,6 +34,8 @@ export interface Work {
   rank_month_current: number | null;
   rank_trend_current: number | null;
   work_type: string;
+  site?: string;
+  age_category?: number | null;
   regist_date: string;
   sales_seen_at: string | null;
   maker_id: string | null;
@@ -77,6 +79,42 @@ export interface WorksFile {
   genre_catalog?: GenreCatalogEntry[];
   trend?: unknown;
   works: Work[];
+  profile?: "adult" | "all-age";
+  quality_new?: QualityNewResult;
+}
+
+export interface QualityNewOptions {
+  days: number | null;
+  start: string | null;
+  end: string | null;
+  min_sales: number;
+  protect_days: number;
+  max_works: number;
+}
+export interface QualityNewResult {
+  start: string;
+  end: string;
+  min_sales: number;
+  protect_days: number;
+  max_works: number;
+  in_range: number;
+  matched: number;
+  added: number;
+  already: number;
+  failed: number;
+  unknown: number;
+  protected: number;
+  low_sales: number;
+  scope_excluded?: number;
+  ids: string[];
+  protected_ids: string[];
+}
+
+export type Profile = "adult" | "all-age";
+export function getProfile(): Promise<Profile> { return invoke("get_profile"); }
+export function switchProfile(profile: Profile): Promise<void> { return invoke("switch_profile", { profile }); }
+export function startQualityNew(options: QualityNewOptions): Promise<string> {
+  return invoke("start_quality_new", { options });
 }
 
 export interface LoadedData {
@@ -135,7 +173,12 @@ export async function loadWorks(): Promise<LoadedData> {
   }
   // 统一为正斜杠，asset 协议在各平台上都能正确处理
   const base = dirOf(dataPath).replace(/\\/g, "/");
-  const works: WorkView[] = file.works.filter((work) => work.work_type === "SOU").map((work) => ({
+  const profile = await getProfile();
+  if (file.profile && file.profile !== profile) throw new Error("作品库属于另一个音声模式");
+  const works: WorkView[] = file.works.filter((work) => work.work_type === "SOU" && (
+    profile === "all-age" ? work.site === "home" && work.age_category === 1
+      : work.site !== "home" && work.age_category !== 1 && !work.url?.includes("/home/work/")
+  )).map((work) => ({
     ...work,
     _cover: work.image_path ? convertFileSrc(`${base}/${work.image_path}`) : "",
   }));

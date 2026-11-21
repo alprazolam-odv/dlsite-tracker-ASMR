@@ -1,5 +1,6 @@
 // 偏好持久化（对齐 macOS @AppStorage 的五个键；存 localStorage，随应用目录保留）
 const KEY = "radar.prefs.v1";
+let storageKey = KEY;
 
 export interface SectionsState {
   favorites: boolean;
@@ -58,7 +59,7 @@ function defaults(): Prefs {
 
 function load(): Prefs {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(storageKey);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<Prefs>;
       const base = defaults();
@@ -85,10 +86,14 @@ function load(): Prefs {
 
 class PrefsStore {
   data = $state<Prefs>(load());
+  useProfile(profile: "adult" | "all-age"): void {
+    storageKey = profile === "all-age" ? KEY + ".all-age" : KEY;
+    this.data = load();
+  }
 
   private persist(): void {
     try {
-      localStorage.setItem(KEY, JSON.stringify(this.data));
+      localStorage.setItem(storageKey, JSON.stringify(this.data));
     } catch {
       // 忽略存储失败
     }
