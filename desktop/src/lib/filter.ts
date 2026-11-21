@@ -1,6 +1,7 @@
 // 筛选与排序逻辑（纯函数；逐项对齐 macOS 版 ContentView.visibleGames 与 SortOrder）。
 import type { WorkView } from "./api";
-import { categoriesOf, compareRank, formsOf } from "./ui";
+import { creditsOf, sameCredit, type Credit } from "./audio.ts";
+import { categoriesOf, compareRank, formsOf } from "./ui.ts";
 
 /** 视图范围（对齐 macOS ViewFilter）：全部 / 某收藏夹 / 某社团 */
 export type ViewFilter =
@@ -37,6 +38,8 @@ export interface FilterState {
   genres: string[];
   /** 排除分类（命中任一项即排除） */
   excludeGenres: string[];
+  /** 声优（同时满足全部所选署名） */
+  voices: Credit[];
   /** 作品形式（多选取并集；空 = 全部） */
   forms: string[];
   /** 发售年份（可多选；空 = 全部） */
@@ -85,6 +88,7 @@ export function emptyFilter(): FilterState {
     priceHigh: "",
     genres: [],
     excludeGenres: [],
+    voices: [],
     forms: [],
     selectedYears: [],
     flags: { voice: false, music: false, video: false },
@@ -96,7 +100,7 @@ export function emptyFilter(): FilterState {
 export function activeFilterCount(f: FilterState): number {
   let count = 0;
   if (f.keyword.trim()) count += 1;
-  count += f.genres.length + f.excludeGenres.length;
+  count += f.genres.length + f.excludeGenres.length + f.voices.length;
   if (f.ratingLow.trim() || f.ratingHigh.trim()) count += 1;
   if (f.includeUnrated) count += 1;
   if (f.salesLow.trim() || f.salesHigh.trim()) count += 1;
@@ -108,6 +112,14 @@ export function activeFilterCount(f: FilterState): number {
   if (f.flags.video) count += 1;
   if (f.genreFocus) count += 1;
   return count;
+}
+
+export type GenreSelection = "genres" | "excludeGenres";
+
+export function setGenreSelection(filter: FilterState, key: GenreSelection, names: string[]): void {
+  const opposite = key === "genres" ? "excludeGenres" : "genres";
+  filter[key] = names;
+  filter[opposite] = filter[opposite].filter((name) => !names.includes(name));
 }
 
 /** 社团键（与 macOS 版一致：优先 maker_id，否则 `n:名称`）。 */
@@ -210,19 +222,17 @@ export function applyFilters(
       const title = work.title.toLowerCase();
       const maker = (work.maker ?? "").toLowerCase();
       const actors = (work.voice_actors ?? "").toLowerCase();
-      if (!title.includes(keyword) && !maker.includes(keyword) && !actors.includes(keyword)) return false;
+      if (!title.includes(keyword) && !maker.includes(keyword) && !actors.includes(keyword)
+        && !creditsOf(work).some((credit) => credit.name.toLowerCase().includes(keyword))) return false;
     }
-    if (f.genres.length > 0) {
+    if (f.genres.length > 0 || f.excludeGenres.length > 0) {
       const categories = categoriesOf(work);
-      for (const genre of f.genres) {
-        if (!categories.includes(genre)) return false;
-      }
+      if (!f.genres.every((name) => categories.includes(name))) return false;
+      if (f.excludeGenres.some((name) => categories.includes(name))) return false;
     }
-    if (f.excludeGenres.length > 0) {
-      const categories = categoriesOf(work);
-      for (const genre of f.excludeGenres) {
-        if (categories.includes(genre)) return false;
-      }
+    if (f.voices.length > 0) {
+      const credits = creditsOf(work);
+      if (!f.voices.every((voice) => credits.some((credit) => sameCredit(credit, voice)))) return false;
     }
     if (years.size > 0) {
       const year = yearOf(work);

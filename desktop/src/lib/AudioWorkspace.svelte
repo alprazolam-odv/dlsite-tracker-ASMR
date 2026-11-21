@@ -13,6 +13,7 @@
   import FollowTags from "./FollowTags.svelte";
   import QuickFollowButton from "./QuickFollowButton.svelte";
   import { categoriesOf } from "./ui";
+  import { startFilterDrag } from "./filterDrag";
 
   let {
     works, ageProfile = "adult", initialActor = null, followedWorks, unreadIds,
@@ -300,7 +301,9 @@
           </div>
           <div class="chips">
             {#each creditsOf(work) as credit (creditKey(credit))}
-              <button onclick={() => openActor(credit)}>{credit.name}</button>
+              <button class="actor-credit" draggable="true" title="拖到侧栏筛选"
+                ondragstart={(event) => startFilterDrag(event, { kind: "voice", credit })}
+                onclick={() => openActor(credit)}>{credit.name}</button>
               <button aria-label={`关注或取消关注 ${credit.name}`} class:active={audioLibrary.isFollowing(credit)}
                 onclick={() => audioLibrary.toggle(credit)}>{audioLibrary.isFollowing(credit) ? "已关注" : "关注"}</button>
             {/each}
@@ -363,6 +366,7 @@
   .actor-name { flex: 1; text-align: left; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
   .chips button { min-height: 25px; padding: 3px 7px; }
+  .chips .actor-credit { cursor: grab; user-select: none; }
   .insights { display: grid; grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); gap: 12px; }
   label { font-size: 12px; display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
   input[type="number"] { width: 90px; }

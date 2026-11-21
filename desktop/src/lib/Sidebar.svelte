@@ -3,7 +3,8 @@
   import { slide } from "svelte/transition";
   import type { GenreCatalogEntry, GenreEntry, WorkView } from "$lib/api";
   import type { FilterState, ViewFilter } from "$lib/filter";
-  import { activeFilterCount, yearOf } from "$lib/filter";
+  import { activeFilterCount, setGenreSelection, yearOf } from "$lib/filter";
+  import { creditKey, type Credit } from "$lib/audio";
   import type { FavoriteCollection } from "$lib/library.svelte";
   import type { GenreProgress, ImportProgress } from "$lib/pipeline";
   import { yearsLabel } from "$lib/pipeline";
@@ -20,6 +21,7 @@
   let {
     active = true,
     works,
+    voiceOptions,
     genres,
     genreCatalog,
     collections,
@@ -42,9 +44,11 @@
     followUpdatesUnread = 0,
     onOpenFollowUpdates,
     onOpenBrowse,
+    onOpenBrowseForFilter,
   }: {
     active?: boolean;
     works: WorkView[];
+    voiceOptions: Credit[];
     genres: GenreEntry[];
     genreCatalog: GenreCatalogEntry[];
     collections: FavoriteCollection[];
@@ -67,12 +71,12 @@
     followUpdatesUnread?: number;
     onOpenFollowUpdates: () => void;
     onOpenBrowse: () => void;
+    onOpenBrowseForFilter: () => void;
   } = $props();
 
   const SECTION_DURATION = 220;
 
   let genreSearch = $state("");
-  let categorySearch = $state("");
 
   let menu = $state<{ x: number; y: number; items: { label: string; action: () => void; danger?: boolean; divider?: boolean }[] } | null>(null);
   let editor = $state<{ mode: "new" | "rename"; id?: string } | null>(null);
@@ -130,11 +134,8 @@
       .map((entry) => known.get(entry.id) ?? { id: entry.id, name: entry.name });
   });
 
-  const categoryMatches = $derived.by(() => {
-    const keyword = categorySearch.trim().toLowerCase();
-    if (!keyword) return [];
-    return categories.filter((name) => name.toLowerCase().includes(keyword)).slice(0, 40);
-  });
+  const voiceOptionsByKey = $derived(new Map([...voiceOptions, ...filter.voices].map((credit) => [creditKey(credit), credit])));
+  const voiceKeys = $derived([...voiceOptionsByKey.keys()]);
 
   const importJobActive = $derived(importProgress?.phase === "enrich");
   const importRunning = $derived(importProgress?.running === true);
@@ -197,24 +198,6 @@
     menu = { x: event.clientX, y: event.clientY, items };
   }
 
-  function toggleIncludeCategory(name: string): void {
-    if (filter.genres.includes(name)) {
-      filter.genres = filter.genres.filter((item) => item !== name);
-    } else {
-      filter.genres = [...filter.genres, name];
-      filter.excludeGenres = filter.excludeGenres.filter((item) => item !== name);
-    }
-  }
-
-  function toggleExcludeCategory(name: string): void {
-    if (filter.excludeGenres.includes(name)) {
-      filter.excludeGenres = filter.excludeGenres.filter((item) => item !== name);
-    } else {
-      filter.excludeGenres = [...filter.excludeGenres, name];
-      filter.genres = filter.genres.filter((item) => item !== name);
-    }
-  }
-
   function openCollectionMenu(collection: FavoriteCollection, event: MouseEvent): void {
     menu = {
       x: event.clientX,
@@ -250,12 +233,11 @@
 
   function clearFilters(): void {
     genreSearch = "";
-    categorySearch = "";
     onClearFilters();
   }
 </script>
 
-<aside class="sidebar" class:inactive={!active}>
+<aside class="sidebar" class:inactive={!active} data-filter-drop="include">
   <section class="card flat">
     <NavRow
       icon={ICONS.gridAll}
@@ -426,45 +408,20 @@
           <input id="work-search" class="box" placeholder="搜索" bind:value={filter.keyword} />
         </div>
         <div class="block">
-          <div class="cap" title="已识别；多选取交集，同时满足全部所选">分类 / 标签</div>
-          <input class="box" placeholder="搜索分类…" bind:value={categorySearch} />
-          {#if !categorySearch.trim()}
-            <SetFilterMenu
-              title="包含分类"
-              hint="多选取交集：同时满足全部所选"
-              emptyLabel="全部"
-              options={categories}
-              selection={filter.genres}
-              onchange={(next) => (filter.genres = next)}
-            />
-            <SetFilterMenu
-              title="排除分类"
-              hint="命中任一所选分类即排除"
-              emptyLabel="不排除"
-              options={categories}
-              selection={filter.excludeGenres}
-              onchange={(next) => (filter.excludeGenres = next)}
-            />
-          {:else if categoryMatches.length === 0}
-            <div class="hint">没有匹配的分类</div>
-          {:else}
-            {#each categoryMatches as name (name)}
-              <button
-                class="cat-row"
-                class:selected={filter.genres.includes(name)}
-                onclick={() => toggleIncludeCategory(name)}
-                oncontextmenu={(event) => {
-                  event.preventDefault();
-                  toggleExcludeCategory(name);
-                }}
-              >
-                <span class="cat-name">{name}</span>
-                <span class="spacer"></span>
-                {#if filter.excludeGenres.includes(name)}<span class="tag">已排除</span>{/if}
-                {#if filter.genres.includes(name)}<span class="ck">{@html ICONS.check}</span>{/if}
-              </button>
-            {/each}
-          {/if}
+          <div class="cap">标签与声优</div>
+          <SetFilterMenu title="包含标签" hint="同时满足全部所选标签" emptyLabel="不限"
+            searchable options={categories} selection={filter.genres}
+            onchange={(next) => { setGenreSelection(filter, "genres", next); onOpenBrowseForFilter(); }} />
+          <SetFilterMenu title="排除标签" hint="命中任一所选标签即排除" emptyLabel="不排除"
+            searchable options={categories} selection={filter.excludeGenres}
+            onchange={(next) => { setGenreSelection(filter, "excludeGenres", next); onOpenBrowseForFilter(); }} />
+          <SetFilterMenu title="包含声优" hint="同时包含全部所选声优" emptyLabel="不限"
+            searchable options={voiceKeys} labelOf={(key) => voiceOptionsByKey.get(key)?.name ?? key}
+            selection={filter.voices.map(creditKey)}
+            onchange={(next) => {
+              filter.voices = next.map((key) => voiceOptionsByKey.get(key)!);
+              onOpenBrowseForFilter();
+            }} />
         </div>
         <div class="block">
           <div class="cap">作品形式</div>
@@ -921,8 +878,7 @@
     background: color-mix(in srgb, var(--text) 5%, transparent);
   }
 
-  .genre-row,
-  .cat-row {
+  .genre-row {
     appearance: none;
     border: 0;
     background: transparent;
@@ -939,13 +895,11 @@
     transition: background 0.15s ease;
   }
 
-  .genre-row:hover,
-  .cat-row:hover {
+  .genre-row:hover {
     background: color-mix(in srgb, var(--text) 6%, transparent);
   }
 
-  .genre-row.selected,
-  .cat-row.selected {
+  .genre-row.selected {
     background: color-mix(in srgb, var(--accent) 14%, transparent);
   }
 
@@ -971,24 +925,6 @@
     font-size: 12px;
     color: var(--muted);
     opacity: 0.8;
-  }
-
-  .cat-name {
-    font-size: 12.5px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .tag {
-    font-size: 11px;
-    color: var(--muted);
-    opacity: 0.85;
-  }
-
-  .ck {
-    display: inline-flex;
-    color: var(--accent);
   }
 
   .spacer {

@@ -71,6 +71,7 @@
     <TagChip
       kind="category"
       text={name}
+      dragFilter={!!ontap}
       title={onmenu ? "" : ontap ? `点击筛选分类「${name}」（再点取消）` : ""}
       onclick={ontap ? () => ontap(name) : undefined}
       oncontextmenu={onmenu ? (event) => onmenu(name, event) : undefined}

@@ -1,5 +1,6 @@
 <script lang="ts">
   // 多选集合菜单（对齐 macOS SetFilterMenu：清除选择 + 勾选列表，触发条显示已选数量）
+  import { tick } from "svelte";
   import { ICONS } from "./ui";
 
   let {
@@ -8,6 +9,8 @@
     options,
     selection,
     hint = "",
+    searchable = false,
+    labelOf = (option: string) => option,
     onchange,
   }: {
     title: string;
@@ -15,11 +18,30 @@
     options: string[];
     selection: string[];
     hint?: string;
+    searchable?: boolean;
+    labelOf?: (option: string) => string;
     onchange: (next: string[]) => void;
   } = $props();
 
   let open = $state(false);
   let container: HTMLDivElement | null = $state(null);
+  let trigger: HTMLButtonElement;
+  let searchInput = $state<HTMLInputElement>();
+  let query = $state("");
+  const resultLimit = 60;
+  const matches = $derived.by(() => {
+    const keyword = query.trim().toLowerCase();
+    return keyword ? options.filter((option) => labelOf(option).toLowerCase().includes(keyword)) : options;
+  });
+  const shown = $derived(searchable ? matches.slice(0, resultLimit) : matches);
+
+  async function toggleMenu() {
+    open = !open;
+    if (!open || !searchable) return;
+    query = "";
+    await tick();
+    if (open) searchInput?.focus();
+  }
 
   function toggle(name: string): void {
     onchange(
@@ -33,30 +55,45 @@
     if (!open || !container) return;
     if (!container.contains(event.target as Node)) open = false;
   }
+
+  function onWindowKeydown(event: KeyboardEvent): void {
+    if (event.key !== "Escape" || !open) return;
+    open = false;
+    if (container?.contains(document.activeElement)) trigger?.focus();
+  }
 </script>
 
-<svelte:window onclick={onWindowClick} />
+<svelte:window onclick={onWindowClick} onkeydown={onWindowKeydown} />
 
 <div class="setfilter" bind:this={container}>
-  <button class="trigger" title={hint} onclick={() => (open = !open)}>
+  <button class="trigger" bind:this={trigger} title={hint} aria-expanded={open} onclick={toggleMenu}>
     <span class="label">{title}</span>
     <span class="value">{selection.length === 0 ? emptyLabel : `已选 ${selection.length} 项`}</span>
     <span class="chev">{@html ICONS.chevronDown}</span>
   </button>
   {#if open}
     <div class="pop">
+      {#if searchable}
+        <input type="search" class="search" bind:this={searchInput} bind:value={query}
+          placeholder="搜索选项…" aria-label={`搜索${title}`} />
+      {/if}
       <button class="header" onclick={() => onchange([])}>清除选择</button>
       <div class="hr"></div>
       <div class="list">
-        {#each options as name (name)}
-          <button class="opt" onclick={() => toggle(name)}>
+        {#each shown as name (name)}
+          <button class="opt" aria-pressed={selection.includes(name)} onclick={() => toggle(name)}>
             <span class="ck" class:on={selection.includes(name)}>
               {#if selection.includes(name)}{@html ICONS.check}{/if}
             </span>
-            <span class="nm">{name}</span>
+            <span class="nm">{labelOf(name)}</span>
           </button>
+        {:else}
+          <div class="empty">没有匹配项</div>
         {/each}
       </div>
+      {#if searchable && matches.length > resultLimit}
+        <div class="empty">显示前 {resultLimit} 项，可继续搜索</div>
+      {/if}
     </div>
   {/if}
 </div>
@@ -138,6 +175,19 @@
     background: color-mix(in srgb, var(--text) 7%, transparent);
   }
 
+  .search {
+    width: 100%;
+    padding: 5px 7px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+    font-size: 12.5px;
+  }
+
+  .empty { color: var(--muted); font-size: 12px; padding: 5px 7px; }
+
   .hr {
     border-top: 1px solid var(--border);
     margin: 3px 4px;
@@ -175,5 +225,8 @@
     width: 12px;
     justify-content: center;
     color: var(--accent);
+    flex: none;
   }
+
+  .nm { overflow-wrap: anywhere; }
 </style>

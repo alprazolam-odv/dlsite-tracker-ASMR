@@ -1,5 +1,6 @@
 <script lang="ts">
   import { flagTag, type TagKind } from "./tag";
+  import { startFilterDrag } from "./filterDrag";
 
   let {
     kind,
@@ -9,6 +10,7 @@
     title = "",
     ariaLabel = "",
     pressed,
+    dragFilter = false,
     onclick,
     oncontextmenu,
   }: {
@@ -19,6 +21,7 @@
     title?: string;
     ariaLabel?: string;
     pressed?: boolean;
+    dragFilter?: boolean;
     onclick?: () => void;
     oncontextmenu?: (event: MouseEvent) => void;
   } = $props();
@@ -36,7 +39,9 @@
 {#if onclick || oncontextmenu}
   <button
     class="chip {kind} {context}"
-    {title}
+    title={dragFilter ? [title, "拖到侧栏筛选"].filter(Boolean).join(" · ") : title}
+    draggable={dragFilter}
+    ondragstart={dragFilter ? (event) => startFilterDrag(event, { kind: "tag", name: text }) : undefined}
     aria-label={ariaLabel || undefined}
     aria-pressed={pressed}
     onclick={onclick}
@@ -64,6 +69,7 @@
   }
 
   button.chip { cursor: pointer; }
+  button.chip[draggable="true"] { cursor: grab; user-select: none; }
   button.chip[aria-pressed] { min-height: 24px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
   button.chip[aria-pressed="true"] { color: var(--text); background: color-mix(in srgb, var(--accent) 24%, var(--panel)); }
   button.chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

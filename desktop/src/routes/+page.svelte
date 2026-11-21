@@ -20,12 +20,14 @@
     applyFilters,
     emptyFilter,
     makerKeyOf,
+    setGenreSelection,
     SORT_OPTIONS,
     viewFilterTitle,
     type FilterState,
     type SortKey,
     type ViewFilter,
   } from "$lib/filter";
+  import { filterDragKind, readFilterDrag, type FilterDragItem, type FilterDropTarget } from "$lib/filterDrag";
   import ContextMenu from "$lib/ContextMenu.svelte";
   import DiscoveryFeedbackDialog from "$lib/DiscoveryFeedbackDialog.svelte";
   import HoverPanel from "$lib/HoverPanel.svelte";
@@ -54,7 +56,7 @@
   import { setQuickFollow } from "$lib/QuickFollowButton.svelte";
   import QuickFollowDialog from "$lib/QuickFollowDialog.svelte";
   import { audioLibrary } from "$lib/audio.svelte";
-  import { creditsOf, recentTaggedWorks, uniqueEditions, type Credit } from "$lib/audio";
+  import { actorDirectory, creditKey, creditsOf, recentTaggedWorks, sameCredit, uniqueEditions, type Credit } from "$lib/audio";
   import FollowUpdates, { type FollowTab } from "$lib/FollowUpdates.svelte";
   import LargeRow from "$lib/LargeRow.svelte";
   import MediumCard from "$lib/MediumCard.svelte";
@@ -204,6 +206,8 @@
   let manualRefreshCount = $state(0);
   let sort = $state<SortKey>("sales");
   let filter = $state<FilterState>(emptyFilter());
+  let draggingFilter = $state<FilterDragItem["kind"] | null>(null);
+  let filterDropTarget = $state<FilterDropTarget | null>(null);
   const activeContentFlags = $derived(CONTENT_FLAG_TAGS.filter(({ key }) => filter.flags[key]));
   let viewFilter = $state<ViewFilter>({ kind: "all" });
   let importYears = $state("1");
@@ -331,6 +335,7 @@
   const dismissedIds = $derived(library.dismissedIds());
   const genres = $derived(data?.file.genres ?? []);
   const genreCatalog = $derived(data?.file.genre_catalog ?? []);
+  const voiceOptions = $derived(actorDirectory(works).map(({ credit }) => credit));
   const tagOptions = $derived([...new Set([...genreCatalog.map((entry) => entry.name), ...works.flatMap(categoriesOf)])]
     .sort((a, b) => a.localeCompare(b, "zh-Hans-CN")));
   const activeGenre = $derived(genres.find((entry) => entry.id === filter.genreFocus) ?? null);
@@ -693,6 +698,7 @@
     void filter.priceHigh;
     void filter.genres;
     void filter.excludeGenres;
+    void filter.voices;
     void filter.forms;
     void filter.selectedYears;
     void filter.flags;
@@ -1145,9 +1151,60 @@
     if (filter.genres.includes(name)) {
       filter.genres = filter.genres.filter((item) => item !== name);
     } else {
-      filter.genres = [...filter.genres, name];
-      filter.excludeGenres = filter.excludeGenres.filter((item) => item !== name);
+      setGenreSelection(filter, "genres", [...filter.genres, name]);
     }
+  }
+
+  function openBrowseForFilter() {
+    if (mode === "browse") return;
+    hideHover();
+    viewFilter = { kind: "all" };
+    makerReturnMode = null;
+    qualityOnly = false;
+    mode = "browse";
+  }
+
+  function onFilterDragStart(event: DragEvent) {
+    draggingFilter = filterDragKind(event.dataTransfer);
+    if (draggingFilter) hideHover();
+  }
+
+  function onFilterDragEnd() {
+    draggingFilter = null;
+    filterDropTarget = null;
+  }
+
+  function dropTargetFor(event: DragEvent): FilterDropTarget | null {
+    if (!draggingFilter || draggingFilter !== filterDragKind(event.dataTransfer)) return null;
+    const element = event.target instanceof Element ? event.target.closest("[data-filter-drop]") : null;
+    const target = element?.getAttribute("data-filter-drop");
+    if (target === "include" || (target === "exclude" && draggingFilter === "tag")) return target;
+    return null;
+  }
+
+  function onFilterDragOver(event: DragEvent) {
+    filterDropTarget = dropTargetFor(event);
+    if (!filterDropTarget || !event.dataTransfer) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  function onFilterDrop(event: DragEvent) {
+    const target = dropTargetFor(event);
+    onFilterDragEnd();
+    if (!target) return;
+    event.preventDefault();
+    const item = readFilterDrag(event.dataTransfer);
+    if (!item) return;
+    if (item.kind === "tag") {
+      const key = target === "exclude" ? "excludeGenres" : "genres";
+      if (!filter[key].includes(item.name)) setGenreSelection(filter, key, [...filter[key], item.name]);
+    } else {
+      const matches = voiceOptions.filter((credit) => sameCredit(credit, item.credit));
+      const credit = matches.length === 1 ? matches[0] : item.credit;
+      if (!filter.voices.some((voice) => sameCredit(voice, credit))) filter.voices = [...filter.voices, credit];
+    }
+    openBrowseForFilter();
   }
 
   function chipForm(name: string) {
@@ -1396,7 +1453,8 @@
   <title>同人音声雷达</title>
 </svelte:head>
 
-<svelte:window onkeydown={onKeydown} onclick={onWindowClick} />
+<svelte:window onkeydown={onKeydown} onclick={onWindowClick}
+  ondragstart={onFilterDragStart} ondragend={onFilterDragEnd} ondragover={onFilterDragOver} ondrop={onFilterDrop} />
 
 <div class="app">
   {#if prefs.data.sidebarVisible}
@@ -1406,6 +1464,7 @@
       bind:viewFilter
       bind:importYears
       {works}
+      {voiceOptions}
       {genres}
       {genreCatalog}
       collections={library.data.collections}
@@ -1427,12 +1486,24 @@
       followingActive={mode === "followUpdates" || (mode === "audio" && audioReturnMode === "followUpdates")}
       {followUpdatesUnread}
       onOpenFollowUpdates={openFollowUpdates}
+      onOpenBrowseForFilter={openBrowseForFilter}
       onOpenBrowse={() => {
         makerReturnMode = null;
         qualityOnly = false;
         mode = "browse";
       }}
     />
+  {/if}
+
+  {#if draggingFilter}
+    <div class="filter-drop-panel" aria-hidden="true">
+      <div class="filter-drop-zone" class:drop-active={filterDropTarget === "include"} data-filter-drop="include">
+        {draggingFilter === "tag" ? "包含标签" : "包含声优"}
+      </div>
+      {#if draggingFilter === "tag"}
+        <div class="filter-drop-zone" class:drop-active={filterDropTarget === "exclude"} data-filter-drop="exclude">排除标签</div>
+      {/if}
+    </div>
   {/if}
 
   <div class="main">
@@ -1710,11 +1781,11 @@
     {/if}
 
     {#if status === "ready" && data}
-      {#if filter.genres.length > 0 || filter.excludeGenres.length > 0 || filter.forms.length > 0 || activeContentFlags.length > 0}
+      {#if filter.genres.length > 0 || filter.excludeGenres.length > 0 || filter.voices.length > 0 || filter.forms.length > 0 || activeContentFlags.length > 0}
         <div class="active-filter-groups" aria-label="当前筛选条件">
           {#if filter.genres.length > 0}
             <div class="active-filter-group" aria-label="包含分类，全部满足">
-              <span class="active-filter-label" title="所选分类取交集">分类</span>
+              <span class="active-filter-label" title="同时满足全部所选标签">包含标签</span>
               {#each filter.genres as name (name)}
                 <TagChip
                   kind="category"
@@ -1730,7 +1801,7 @@
           {/if}
           {#if filter.excludeGenres.length > 0}
             <div class="active-filter-group" aria-label="排除分类">
-              <span class="active-filter-label">排除分类</span>
+              <span class="active-filter-label">排除标签</span>
               {#each filter.excludeGenres as name (name)}
                 <TagChip
                   kind="excluded"
@@ -1741,6 +1812,16 @@
                   ariaLabel={`移除排除分类「${name}」`}
                   onclick={() => (filter.excludeGenres = filter.excludeGenres.filter((item) => item !== name))}
                 />
+              {/each}
+            </div>
+          {/if}
+          {#if filter.voices.length > 0}
+            <div class="active-filter-group" aria-label="包含声优，全部满足">
+              <span class="active-filter-label" title="同时包含全部所选声优">包含声优</span>
+              {#each filter.voices as voice (creditKey(voice))}
+                <TagChip kind="category" text={voice.name} context="filter" removable
+                  ariaLabel={`移除声优「${voice.name}」`}
+                  onclick={() => (filter.voices = filter.voices.filter((item) => creditKey(item) !== creditKey(voice)))} />
               {/each}
             </div>
           {/if}
@@ -2335,6 +2416,37 @@
 
   .spacer {
     flex: 1;
+  }
+
+  .filter-drop-panel {
+    position: fixed;
+    z-index: 160;
+    inset: 12px auto auto 12px;
+    width: 256px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    box-shadow: 0 6px 22px rgb(0 0 0 / 22%);
+  }
+
+  .filter-drop-zone {
+    display: grid;
+    place-items: center;
+    min-height: 44px;
+    border: 1px dashed var(--muted);
+    border-radius: 7px;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .filter-drop-zone.drop-active {
+    border: 1px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 18%, var(--panel));
   }
 
   .active-filter-groups {

@@ -4,6 +4,8 @@ A local desktop browser for DLsite doujin voice and ASMR works, adapted from [Fa
 
 Browse voice rankings and older releases, search and follow credited voice actors, filter by language, ASMR themes, explicitly stated duration and listening state, and group official translations. The voice directory under Following also includes related actors, bedtime suggestions and an optional local RJ audio-file scan. The scan keeps files and paths on your device. Works with no reliable total running time show an unknown duration. Official previews and purchases are on DLsite.
 
+Drag a work's tag or voice actor to the left sidebar to filter the local work list. Drop a tag on **排除标签** (Exclude Tags) to hide works with that tag. Results must match every selected tag and voice actor. You can also search and select filters in the sidebar or remove them above the results.
+
 Select **＋关注** on a work to follow any of its credited actors, publishing circle or original tags. In **我的关注** (Following), open **关注清单** to see, search or remove all your follows. **新作动态** shows releases from the past 14 days in your current library. The actor, circle and tag feeds have independent read states. Select a tag on a feed card to toggle tracking. When the sidebar is hidden, use **我的关注** in the top bar.
 
 See the [Chinese README](README.md) for build and usage instructions. The project is [MIT licensed](LICENSE) and is not affiliated with DLsite.
