@@ -215,7 +215,7 @@
               <div class="favorite-grid">
                 {#each favoriteWorks as work (work.id)}
                   <button class="favorite-card" class:selected={selectedExemplarIds.includes(work.id)} onclick={() => toggleExemplar(work.id)}>
-                    <Cover src={work._cover} width="100%" height={126} rounded />
+                    <Cover workId={work.id} src={work._cover} width="100%" height={126} rounded />
                     <span class="favorite-title">{work.title}</span>
                     <span class="favorite-maker">{work.maker}</span>
                     {#if selectedExemplarIds.includes(work.id)}<span class="selected-mark">✓ 已选</span>{/if}

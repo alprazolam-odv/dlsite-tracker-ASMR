@@ -117,7 +117,7 @@
             {#each group.works.sort((a, b) => releaseTime(b.regist_date) - releaseTime(a.regist_date)) as work (work.id)}
               <button class="work" onclick={() => onopen(work)} title={work.title}>
                 <div class="cover-wrap">
-                  <Cover src={work._cover} width="100%" height={168} rounded />
+                  <Cover workId={work.id} src={work._cover} width="100%" height={168} rounded />
                   <span class="new">NEW</span>
                   {#if unreadIds.has(work.id)}<span class="dot" title="未读"></span>{/if}
                 </div>

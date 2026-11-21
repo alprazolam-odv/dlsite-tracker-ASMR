@@ -32,7 +32,7 @@
 </script>
 
 <article class="compact">
-  <Cover src={game._cover} width={50} height={64} rounded />
+  <Cover workId={game.id} src={game._cover} width={50} height={64} rounded />
   <div class="main">
     <div class="title">{game.title}</div>
     <div class="sub">

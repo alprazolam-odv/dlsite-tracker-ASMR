@@ -17,7 +17,7 @@
 </script>
 
 <div class="tile">
-  <Cover src={game._cover} height={196} />
+  <Cover workId={game.id} src={game._cover} height={196} />
   <div class="overlay">
     <div class="spacer"></div>
     <div class="title">{game.title}</div>
@@ -40,6 +40,13 @@
     overflow: hidden;
     cursor: default;
     background: linear-gradient(135deg, #4a3873 0%, #21304d 100%);
+  }
+
+  .tile :global(.library-marks) {
+    top: 5px;
+    bottom: auto;
+    right: 36px;
+    z-index: 1;
   }
 
   .tile :global(.cover) {

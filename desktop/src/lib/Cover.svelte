@@ -1,18 +1,26 @@
 <script lang="ts">
   import { ICONS } from "$lib/ui";
+  import { externalLibrary, libraryKey } from "./externalLibrary";
   import { prefs } from "$lib/prefs.svelte";
 
   let {
     src,
+    workId,
     width,
     height,
     rounded = false,
   }: {
     src?: string;
+    workId: string;
     width?: number | string;
     height?: number | string;
     rounded?: boolean;
   } = $props();
+
+  const key = $derived(libraryKey(workId));
+  const collected = $derived($externalLibrary.marks.collected.has(key));
+  const excluded = $derived($externalLibrary.marks.excluded.has(key));
+  const unknown = $derived($externalLibrary.marks.unknown.has(key));
 
   const style = $derived(
     `${width !== undefined ? `width:${typeof width === "number" ? `${width}px` : width};` : ""}` +
@@ -28,10 +36,37 @@
   {:else}
     <span class="fallback">{@html ICONS.gamepad}</span>
   {/if}
+  {#if collected || excluded || unknown}
+    <div class="library-marks">
+      {#if collected}<span title={unknown ? "上次已收录，本次待确认" : "外部作品库已收录"}>已收录</span>{/if}
+      {#if excluded}<span title="外部作品库已排除">已排除</span>{/if}
+      {#if unknown && !collected}<span title="本次未能确认是否收录">待确认</span>{/if}
+    </div>
+  {/if}
 </div>
 
 <style>
+  .library-marks {
+    position: absolute;
+    bottom: 3px;
+    left: 3px;
+    right: 3px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+  .library-marks span {
+    padding: 1px 3px;
+    border-radius: 3px;
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    font-size: 11px;
+    line-height: 1.3;
+    white-space: nowrap;
+  }
   .cover {
+    position: relative;
     flex: none;
     overflow: hidden;
     background: linear-gradient(135deg, #4a3873 0%, #21304d 100%);

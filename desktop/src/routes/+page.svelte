@@ -44,6 +44,8 @@
   import CompactRow from "$lib/CompactRow.svelte";
   import CoverTile from "$lib/CoverTile.svelte";
   import Discover from "$lib/Discover.svelte";
+  import ExternalLibrarySettings from "$lib/ExternalLibrarySettings.svelte";
+  import { externalLibrary, visibleLibraryWorks } from "$lib/externalLibrary";
   import AudioWorkspace from "$lib/AudioWorkspace.svelte";
   import { audioLibrary } from "$lib/audio.svelte";
   import { uniqueEditions, type Credit } from "$lib/audio";
@@ -230,8 +232,11 @@
   const works = $derived(data?.works ?? []);
   const qualityResult = $derived(data?.file.quality_new ?? null);
   const qualityIds = $derived(new Set(qualityResult?.ids ?? []));
-  const audioUnread = $derived(audioLibrary.unread(works).length);
-  const discoveryWorks = $derived(uniqueEditions(works));
+  const hideCollected = $derived($externalLibrary.hideCollected);
+  const hideExcluded = $derived($externalLibrary.hideExcluded);
+  const visibleWorks = $derived(visibleLibraryWorks(works, $externalLibrary));
+  const audioUnread = $derived(audioLibrary.unread(visibleWorks).length);
+  const discoveryWorks = $derived(uniqueEditions(visibleWorks));
 
   /** 测量用「最宽内容」卡片：长标题 + 最长 9 个分类 + 三形式 + 全徽章 + 全数据行 + 折扣价 */
   const measureWork = $derived.by((): WorkView | null => {
@@ -272,7 +277,7 @@
     if (activeCollectionId) return library.idsIn(activeCollectionId);
     return new Set<string>();
   });
-  const filtered = $derived(applyFilters(qualityOnly ? works.filter((w) => qualityIds.has(w.id)) : works, filter, sort, { viewFilter, favoriteIds }));
+  const filtered = $derived(applyFilters(qualityOnly ? visibleWorks.filter((w) => qualityIds.has(w.id)) : visibleWorks, filter, sort, { viewFilter, favoriteIds }));
   /** 发现系统：已关注作者的 key 集合（用于口味得分加分） */
   const followedMakers = $derived(new Set(library.data.makers.map((maker) => maker.key)));
   const recentFollowedWorks = $derived.by(() => {
@@ -287,9 +292,10 @@
       })
       .sort((a, b) => releaseTimestamp(b.regist_date) - releaseTimestamp(a.regist_date));
   });
+  const visibleFollowedWorks = $derived(visibleLibraryWorks(recentFollowedWorks, $externalLibrary));
   const unreadFollowUpdateIds = $derived(library.unreadFollowUpdateIds());
   const unreadFollowUpdates = $derived(
-    recentFollowedWorks.filter((work) => unreadFollowUpdateIds.has(work.id)),
+    visibleFollowedWorks.filter((work) => unreadFollowUpdateIds.has(work.id)),
   );
   const unreadFollowMakerCount = $derived(
     new Set(unreadFollowUpdates.map((work) => makerKeyOf(work.maker, work.maker_id))).size,
@@ -609,6 +615,8 @@
 
   // 筛选 / 排序 / 视图 / 视图范围变化时：回到顶部并收起浮窗与菜单
   $effect(() => {
+    void hideCollected;
+    void hideExcluded;
     void filter.keyword;
     void filter.ratingLow;
     void filter.ratingHigh;
@@ -639,6 +647,7 @@
         profile = await getProfile();
         prefs.useProfile(profile);
         audioLibrary.useProfile(profile);
+        externalLibrary.useProfile(profile);
         view = normalizeView(prefs.data.displayMode);
         await library.load();
         profileReady = true;
@@ -690,7 +699,9 @@
     try {
       // 先让「加载中」渲染一帧，再做读文件与解析的重活
       await new Promise((resolve) => setTimeout(resolve, 0));
-      data = await loadWorks();
+      const loaded = await loadWorks();
+      data = loaded;
+      void externalLibrary.setWorks(loaded.works);
       console.info(`[radar] 已加载 ${data.works.length} 件作品（${data.path}）`);
       if (!options.keepScroll) {
         // 虚拟列表的逻辑位置与真实滚动容器必须一起归零。
@@ -1200,7 +1211,7 @@
     followUpdatesVisited = true;
     returnToFollowUpdates = false;
     mode = "followUpdates";
-    library.markFollowUpdatesRead(recentFollowedWorks.map((work) => work.id));
+    library.markFollowUpdatesRead(visibleFollowedWorks.map((work) => work.id));
   }
 
   function toggleDiscover() {
@@ -1387,9 +1398,21 @@
           评价人数
         </label>
         <div class="pop-note">偏好保存在本机，立即生效。</div>
+        <div class="pop-divider"></div>
+        {#if profileReady}<ExternalLibrarySettings />{/if}
       </div>
     {/if}
 
+    {#if $externalLibrary.error || $externalLibrary.partial || $externalLibrary.storageError}
+      <div class="category-ready" role="status">
+        {#if $externalLibrary.error}
+          <span>外部作品库同步失败。{$externalLibrary.error}。{$externalLibrary.syncedAt ? "仍显示上次同步结果，标记可能已过期。" : "尚无已保存的标记。"}</span>
+        {:else if $externalLibrary.partial}
+          <span>部分作品库目录不可用，{$externalLibrary.marks.unknown.size} 部作品的收录状态待确认。已有收录标记可能已过期。</span>
+        {/if}
+        {#if $externalLibrary.storageError}<span>{$externalLibrary.storageError}</span>{/if}
+      </div>
+    {/if}
     {#if banner}
       <div class="banner-wrap">
         <UpdateBanner icon={banner.icon} text={banner.text} warning={banner.warning} />
@@ -1450,7 +1473,7 @@
     {/if}
     {#if mode === "audio" && status === "ready" && data}
       {#key audioSeed}
-        <AudioWorkspace {works} ageProfile={profile} initialActor={audioActor} initialTab={audioTab}
+        <AudioWorkspace works={visibleWorks} ageProfile={profile} initialActor={audioActor} initialTab={audioTab}
           onopen={openWork} onclose={() => (mode = "browse")}
           onreload={() => reload({ quiet: true, keepScroll: true })}
           oncheck={() => runUpdate("quick")} />
@@ -1465,7 +1488,7 @@
       <FollowUpdates
         active={mode === "followUpdates"}
         resetScrollToken={manualRefreshCount}
-        works={recentFollowedWorks}
+        works={visibleFollowedWorks}
         unreadIds={unreadFollowUpdateIds}
         lastCheckedAt={library.data.follow_updates.last_checked_at}
         refreshing={syncing || isRunning(progress)}
@@ -2034,7 +2057,9 @@
     top: 62px;
     right: 22px;
     z-index: 150;
-    width: 250px;
+    width: 280px;
+    max-height: calc(100vh - 76px);
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 8px;

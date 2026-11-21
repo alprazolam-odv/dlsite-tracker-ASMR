@@ -45,7 +45,7 @@
 
 <article class="medium">
   <div class="top">
-    <Cover src={game._cover} width={92} height={122} rounded />
+    <Cover workId={game.id} src={game._cover} width={92} height={122} rounded />
     <div class="info">
       <div class="title" title={game.title}>{game.title}</div>
       <button

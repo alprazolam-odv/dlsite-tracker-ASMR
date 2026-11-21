@@ -61,7 +61,7 @@
   oncontextmenu={(event) => oncontext?.(item.game, event)}
 >
   <div class="cover-wrap">
-    <Cover src={item.game._cover} width="100%" height={196} rounded />
+    <Cover workId={item.game.id} src={item.game._cover} width="100%" height={196} rounded />
     {#if item.badges.length > 0}
       <div class="signal-badges">
         {#if item.badges.includes("sprint")}<span class="signal sprint">冲刺中</span>{/if}

@@ -297,7 +297,7 @@
   <div class="results">
     {#each results.slice(0, maxRows) as work (work.id)}
       <article class="audio-row">
-        <Cover src={work._cover} width={72} height={94} rounded />
+        <Cover workId={work.id} src={work._cover} width={72} height={94} rounded />
         <div class="work-info">
           <button class="work-title" title={work.title} onclick={() => officialWork(work.id)}>{work.title}</button>
           <div class="sub">{work.id} · {work.maker || "社团未知"} · {work.regist_date?.slice(0, 10) || "日期未知"}

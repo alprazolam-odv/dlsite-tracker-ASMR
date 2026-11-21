@@ -44,7 +44,7 @@
 </script>
 
 <article class="large">
-  <Cover src={game._cover} width={110} height={146} rounded />
+  <Cover workId={game.id} src={game._cover} width={110} height={146} rounded />
   <div class="main">
     <div class="headline">
       <div class="title">{game.title}</div>
